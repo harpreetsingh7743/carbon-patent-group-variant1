@@ -1,0 +1,26 @@
+:root {
+  --color-black: #000000;
+  --color-white: #ffffff;
+  --color-main-background: #12143d;
+  --color-main-text: #ffffff;
+  --color-header-border: rgba(255, 255, 255, 0.22);
+  --color-header-background: rgba(0, 0, 0, 0.32);
+  --color-header-shadow: rgba(4, 12, 30, 0.26);
+  --color-header-highlight: rgba(255, 255, 255, 0.2);
+  --color-header-brand-text: #f5f7ff;
+  --color-header-navigation-text: rgba(245, 247, 255, 0.9);
+  --color-header-navigation-hover-text: #ffffff;
+  --color-header-action-background: rgba(98, 185, 255, 0.92);
+  --color-header-action-shadow: rgba(0, 0, 0, 0.14);
+  --color-hero-background-glow: rgba(98, 185, 255, 0.12);
+  --color-hero-title-accent: #63d5ff;
+  --color-hero-description-text: rgba(245, 247, 255, 0.82);
+  --color-hero-button-text: #17345e;
+  --color-hero-button-icon-background: rgba(255, 255, 255, 0.92);
+  --color-hero-button-icon-text: #17345e;
+  --color-hero-corner-accent: #1cd3ff;
+  --color-hero-green-circle: #5ab947;
+  --color-hero-green-circle-strong: rgba(90, 185, 71, 0.32);
+  --color-hero-green-circle-soft: rgba(90, 185, 71, 0.16);
+  --color-hero-green-circle-fade: rgba(90, 185, 71, 0.04);
+}

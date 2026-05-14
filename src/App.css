@@ -1,4 +1,35 @@
 * {
   margin: 0;
   padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  background: var(--color-main-background);
+  color: var(--color-main-text);
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.app-shell {
+  position: relative;
+  min-height: 100vh;
+}
+
+.app-shell__header {
+  position: absolute;
+  top: 1.5rem;
+  left: 0;
+  width: 100%;
+  z-index: 2;
+}
+
+@media (max-width: 640px) {
+  .app-shell__header {
+    top: 1rem;
+  }
 }

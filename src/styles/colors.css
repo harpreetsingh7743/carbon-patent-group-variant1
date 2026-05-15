@@ -23,4 +23,21 @@
   --color-hero-green-circle-strong: rgba(90, 185, 71, 0.32);
   --color-hero-green-circle-soft: rgba(90, 185, 71, 0.16);
   --color-hero-green-circle-fade: rgba(90, 185, 71, 0.04);
+  --color-intro-surface: #eef4ff;
+  --color-intro-copy-text: rgba(18, 20, 61, 0.8);
+  --color-intro-grid-dot: rgba(18, 20, 61, 0.08);
+  --color-intro-overlay-glow: rgba(98, 185, 255, 0.16);
+  --color-intro-overlay-shadow: rgba(18, 20, 61, 0.05);
+  --color-intro-overlay-highlight: rgba(255, 255, 255, 0.16);
+  --color-intro-overlay-fade: rgba(255, 255, 255, 0.02);
+  --color-intro-card-mid: rgba(98, 185, 255, 0.72);
+  --color-intro-card-deep: rgba(46, 93, 196, 0.86);
+  --color-intro-card-shadow: rgba(14, 22, 61, 0.24);
+  --color-intro-card-inset-highlight: rgba(255, 255, 255, 0.14);
+  --color-intro-card-glass-highlight: rgba(255, 255, 255, 0.03);
+  --color-intro-card-border: rgba(255, 255, 255, 0.18);
+  --color-intro-cutout-shadow: rgba(240, 246, 255, 0.9);
+  --color-intro-visual-highlight-strong: rgba(255, 255, 255, 0.22);
+  --color-intro-visual-highlight-soft: rgba(255, 255, 255, 0.08);
+  --color-intro-image-shadow: rgba(6, 22, 72, 0.28);
 }

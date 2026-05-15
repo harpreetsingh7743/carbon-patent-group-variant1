@@ -1,6 +1,7 @@
 import './App.css'
 import SiteHeader from './components/site-header'
 import HeroSection from './pages/hero-section'
+import IntroSection from './pages/intro-section'
 
 function App() {
   return (
@@ -9,6 +10,7 @@ function App() {
         <SiteHeader />
       </div>
       <HeroSection />
+      <IntroSection />
     </main>
   )
 }

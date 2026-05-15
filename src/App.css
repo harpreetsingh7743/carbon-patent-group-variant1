@@ -21,15 +21,23 @@ body {
 }
 
 .app-shell__header {
-  position: absolute;
+  position: sticky;
   top: 1.5rem;
   left: 0;
   width: 100%;
-  z-index: 2;
+  height: 0;
+  overflow: visible;
+  pointer-events: none;
+  z-index: 12;
+}
+
+.app-shell__header > * {
+  margin-top: 1.5rem;
+  pointer-events: auto;
 }
 
 @media (max-width: 640px) {
-  .app-shell__header {
-    top: 1rem;
+  .app-shell__header > * {
+    margin-top: 1rem;
   }
 }

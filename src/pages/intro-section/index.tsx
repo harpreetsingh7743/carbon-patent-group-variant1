@@ -1,5 +1,5 @@
 import { motion, useMotionValueEvent, useReducedMotion, useScroll, useTransform } from 'framer-motion'
-import { useEffect, useLayoutEffect, useRef } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef } from 'react'
 
 import './styles.css'
 
@@ -11,6 +11,9 @@ const PARTICLE_GLOW_COLOR = 'rgba(149, 149, 149, 0.16)'
 const PARTICLE_FILL_COLOR = 'rgba(134, 134, 134, 0.96)'
 const PARTICLE_IDLE_VELOCITY_THRESHOLD = 0.02
 const PARTICLE_IDLE_OFFSET_THRESHOLD = 0.02
+const VISUAL_CARD_ZOOM_SCROLL_MULTIPLIER = 1
+const FULLSCREEN_PANEL_SCROLL_MULTIPLIER = 1
+const FULLSCREEN_PANEL_REVEAL_DELAY = 0.08
 
 const VISUAL_CARD_CLIP_START: readonly [number, number][] = [
   [0, 0],
@@ -34,6 +37,19 @@ const VISUAL_CARD_CLIP_END: readonly [number, number][] = [
   [0, 100],
 ]
 
+const VISUAL_CARD_CLIP_FULL: readonly [number, number][] = [
+  [0, 0],
+  [100, 0],
+  [100, 0],
+  [100, 0],
+  [100, 100],
+  [100, 100],
+  [100, 100],
+  [0, 100],
+]
+
+const VISUAL_CARD_BORDER_RADIUS_REM = 1.8
+
 function getVisualCardClipPath(progress: number) {
   const clampedProgress = Math.min(1, Math.max(0, progress))
   const points = VISUAL_CARD_CLIP_START.map((startPoint, pointIndex) => {
@@ -45,6 +61,133 @@ function getVisualCardClipPath(progress: number) {
   })
 
   return `polygon(${points.join(', ')})`
+}
+
+function getVisualCardZoomClipPath(progress: number) {
+  const clampedProgress = Math.min(1, Math.max(0, progress))
+  const points = VISUAL_CARD_CLIP_END.map((startPoint, pointIndex) => {
+    const endPoint = VISUAL_CARD_CLIP_FULL[pointIndex]
+    const x = startPoint[0] + (endPoint[0] - startPoint[0]) * clampedProgress
+    const y = startPoint[1] + (endPoint[1] - startPoint[1]) * clampedProgress
+
+    return `${x}% ${y}%`
+  })
+
+  return `polygon(${points.join(', ')})`
+}
+
+function readVisualCardRect(element: HTMLElement): IntroVisualCardRect {
+  const bounds = element.getBoundingClientRect()
+
+  return {
+    top: bounds.top,
+    left: bounds.left,
+    width: bounds.width,
+    height: bounds.height,
+  }
+}
+
+function getFullscreenTargetRect(): IntroVisualCardRect {
+  return {
+    top: 0,
+    left: 0,
+    width: window.innerWidth,
+    height: window.innerHeight,
+  }
+}
+
+function getCopyScrollProgress(overallProgress: number, copyPhaseEndRatio: number) {
+  if (copyPhaseEndRatio <= 0) {
+    return 0
+  }
+
+  return Math.min(1, overallProgress / copyPhaseEndRatio)
+}
+
+function getVisualCardZoomProgress(
+  overallProgress: number,
+  copyPhaseEndRatio: number,
+  zoomPhaseEndRatio: number,
+) {
+  if (copyPhaseEndRatio >= 1 || zoomPhaseEndRatio <= copyPhaseEndRatio) {
+    return 0
+  }
+
+  if (overallProgress <= copyPhaseEndRatio) {
+    return 0
+  }
+
+  return Math.min(1, (overallProgress - copyPhaseEndRatio) / (zoomPhaseEndRatio - copyPhaseEndRatio))
+}
+
+function getFullscreenPanelProgress(overallProgress: number, zoomPhaseEndRatio: number) {
+  if (zoomPhaseEndRatio >= 1 || overallProgress <= zoomPhaseEndRatio) {
+    return 0
+  }
+
+  return Math.min(1, (overallProgress - zoomPhaseEndRatio) / (1 - zoomPhaseEndRatio))
+}
+
+function getVisibleFullscreenPanelProgress(panelProgress: number) {
+  if (panelProgress <= FULLSCREEN_PANEL_REVEAL_DELAY) {
+    return 0
+  }
+
+  return Math.min(1, (panelProgress - FULLSCREEN_PANEL_REVEAL_DELAY) / (1 - FULLSCREEN_PANEL_REVEAL_DELAY))
+}
+
+function applyVisualCardZoom(
+  visualCardElement: HTMLElement,
+  fromRect: IntroVisualCardRect,
+  zoomProgress: number,
+) {
+  const clampedProgress = Math.min(1, Math.max(0, zoomProgress))
+  const toRect = getFullscreenTargetRect()
+  const top = fromRect.top + (toRect.top - fromRect.top) * clampedProgress
+  const left = fromRect.left + (toRect.left - fromRect.left) * clampedProgress
+  const width = fromRect.width + (toRect.width - fromRect.width) * clampedProgress
+  const height = fromRect.height + (toRect.height - fromRect.height) * clampedProgress
+  const borderRadius = VISUAL_CARD_BORDER_RADIUS_REM * (1 - clampedProgress)
+
+  visualCardElement.style.position = 'fixed'
+  visualCardElement.style.top = `${top}px`
+  visualCardElement.style.left = `${left}px`
+  visualCardElement.style.width = `${width}px`
+  visualCardElement.style.height = `${height}px`
+  visualCardElement.style.margin = '0'
+  visualCardElement.style.maxWidth = 'none'
+  visualCardElement.style.borderRadius = `${borderRadius}rem`
+  visualCardElement.style.clipPath = getVisualCardZoomClipPath(clampedProgress)
+  visualCardElement.style.zIndex = '80'
+  visualCardElement.style.setProperty('--visual-card-zoom-progress', String(clampedProgress))
+  visualCardElement.dataset.zoomActive = 'true'
+}
+
+function clearVisualCardZoom(visualCardElement: HTMLElement) {
+  visualCardElement.style.removeProperty('position')
+  visualCardElement.style.removeProperty('top')
+  visualCardElement.style.removeProperty('left')
+  visualCardElement.style.removeProperty('width')
+  visualCardElement.style.removeProperty('height')
+  visualCardElement.style.removeProperty('margin')
+  visualCardElement.style.removeProperty('max-width')
+  visualCardElement.style.removeProperty('border-radius')
+  visualCardElement.style.removeProperty('clip-path')
+  visualCardElement.style.removeProperty('z-index')
+  visualCardElement.style.removeProperty('--visual-card-zoom-progress')
+  visualCardElement.dataset.zoomActive = 'false'
+}
+
+function applyFullscreenPanelProgress(panelStackElement: HTMLElement, panelProgress: number) {
+  const clampedProgress = getVisibleFullscreenPanelProgress(panelProgress)
+
+  panelStackElement.style.transform = `translate3d(0, ${clampedProgress * -50}%, 0)`
+  panelStackElement.style.setProperty('--fullscreen-panel-progress', String(clampedProgress))
+}
+
+function clearFullscreenPanelProgress(panelStackElement: HTMLElement) {
+  panelStackElement.style.removeProperty('transform')
+  panelStackElement.style.removeProperty('--fullscreen-panel-progress')
 }
 
 class IntroBackgroundParticle {
@@ -143,9 +286,8 @@ function createParticles(canvasWidth: number, canvasHeight: number) {
 }
 
 const defaultParagraphs = [
-  `Strong patents don't happen by accident. They're built through precise drafting, experienced prosecution, and advice that connects technical detail to commercial reality.",
-  'Carbon Patents does one thing; we secure and manage patent rights in Canada. Our team works across life sciences, pharmaceuticals, chemistry, medical devices, software, electrical, mechanical, and emerging technologies. We have the depth of experience to handle complex subject matter and the focus to get it right.
-  Eiusmod occaecat in elit qui. Ad duis nisi laboris est irure et commodo qui. Non eu eu cillum culpa amet labore ipsum aute laborum qui.`,
+  `Strong patents don't happen by accident. They're built through precise drafting, experienced prosecution, and advice that connects technical detail to commercial reality.`,
+  `Carbon Patents does one thing; we secure and manage patent rights in Canada. Our team works across life sciences, pharmaceuticals, chemistry, medical devices, software, electrical, mechanical, and emerging technologies. We have the depth of experience to handle complex subject matter and the focus to get it right. Eiusmod occaecat in elit qui. Ad duis nisi laboris est irure et commodo qui. Non eu eu cillum culpa amet labore ipsum aute laborum qui.`,
 
   `Sit sunt occaecat ex adipisicing reprehenderit voluptate in labore proident. Est Lorem nostrud deserunt esse deserunt veniam nisi duis qui veniam sunt. Do ullamco est consectetur sunt laboris commodo qui dolore enim laborum. Cupidatat et in aliquip incididunt esse occaecat aliqua amet dolor aliquip sint ipsum amet. Id aute sunt quis dolor pariatur nulla non. Velit sint do in amet eu non.`,
 
@@ -172,7 +314,13 @@ function IntroSection({
   const trackRef = useRef<HTMLDivElement | null>(null)
   const sectionRef = useRef<HTMLElement | null>(null)
   const copyRef = useRef<HTMLDivElement | null>(null)
+  const visualCardRef = useRef<HTMLDivElement | null>(null)
+  const visualCardFloaterRef = useRef<HTMLDivElement | null>(null)
+  const fullscreenPanelStackRef = useRef<HTMLDivElement | null>(null)
   const isScrollGatedRef = useRef(false)
+  const copyPhaseEndRatioRef = useRef(1)
+  const zoomPhaseEndRatioRef = useRef(1)
+  const zoomFromRectRef = useRef<IntroVisualCardRect | null>(null)
   const particleCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const prefersReducedMotion = useReducedMotion()
   const contentParagraphs = paragraphs.length > 0 ? paragraphs : defaultParagraphs
@@ -182,13 +330,90 @@ function IntroSection({
     offset: ['start start', 'end end'],
   })
 
-  const visualCardClipPath = useTransform(scrollYProgress, (latestProgress) => {
+  const contentOpacity = useTransform(scrollYProgress, (latestProgress) => {
     if (prefersReducedMotion || !isScrollGatedRef.current) {
-      return getVisualCardClipPath(0)
+      return 1
     }
 
-    return getVisualCardClipPath(latestProgress)
+    const zoomProgress = getVisualCardZoomProgress(
+      latestProgress,
+      copyPhaseEndRatioRef.current,
+      zoomPhaseEndRatioRef.current,
+    )
+
+    return 1 - zoomProgress * 0.92
   })
+
+  const syncIntroScrollState = useCallback(
+    (latestProgress: number) => {
+      if (prefersReducedMotion) {
+        return
+      }
+
+      const copyElement = copyRef.current
+      const visualCardElement = visualCardRef.current
+      const visualCardFloaterElement = visualCardFloaterRef.current
+      const fullscreenPanelStackElement = fullscreenPanelStackRef.current
+      const sectionElement = sectionRef.current
+      const copyPhaseEndRatio = copyPhaseEndRatioRef.current
+      const zoomPhaseEndRatio = zoomPhaseEndRatioRef.current
+      const copyScrollProgress = getCopyScrollProgress(latestProgress, copyPhaseEndRatio)
+      const zoomProgress = getVisualCardZoomProgress(
+        latestProgress,
+        copyPhaseEndRatio,
+        zoomPhaseEndRatio,
+      )
+      const fullscreenPanelProgress = getFullscreenPanelProgress(latestProgress, zoomPhaseEndRatio)
+      const visibleFullscreenPanelProgress = getVisibleFullscreenPanelProgress(fullscreenPanelProgress)
+
+      if (copyElement && copyElement.dataset.scrollGated === 'true') {
+        const maxScrollTop = copyElement.scrollHeight - copyElement.clientHeight
+
+        if (maxScrollTop > 0) {
+          copyElement.scrollTop = copyScrollProgress * maxScrollTop
+        }
+      }
+
+      if (!visualCardElement || !visualCardFloaterElement || !fullscreenPanelStackElement) {
+        return
+      }
+
+      if (zoomProgress > 0) {
+        if (!zoomFromRectRef.current) {
+          zoomFromRectRef.current = readVisualCardRect(visualCardElement)
+        }
+
+        visualCardElement.style.opacity = '0'
+        visualCardElement.style.visibility = 'hidden'
+        visualCardFloaterElement.style.opacity = '1'
+        visualCardFloaterElement.style.visibility = 'visible'
+        visualCardFloaterElement.dataset.panelAttached =
+          visibleFullscreenPanelProgress > 0 ? 'true' : 'false'
+        applyVisualCardZoom(visualCardFloaterElement, zoomFromRectRef.current, zoomProgress)
+        applyFullscreenPanelProgress(fullscreenPanelStackElement, fullscreenPanelProgress)
+        sectionElement?.setAttribute('data-zoom-active', 'true')
+        return
+      }
+
+      if (zoomFromRectRef.current) {
+        clearVisualCardZoom(visualCardFloaterElement)
+        clearFullscreenPanelProgress(fullscreenPanelStackElement)
+        zoomFromRectRef.current = null
+      }
+
+      visualCardElement.style.removeProperty('opacity')
+      visualCardElement.style.removeProperty('visibility')
+      visualCardFloaterElement.style.opacity = '0'
+      visualCardFloaterElement.style.visibility = 'hidden'
+      visualCardFloaterElement.dataset.panelAttached = 'false'
+      sectionElement?.setAttribute('data-zoom-active', 'false')
+
+      if (isScrollGatedRef.current) {
+        visualCardElement.style.clipPath = getVisualCardClipPath(copyScrollProgress)
+      }
+    },
+    [prefersReducedMotion],
+  )
 
   useLayoutEffect(() => {
     const trackElement = trackRef.current
@@ -201,47 +426,95 @@ function IntroSection({
     const updateScrollTrackHeight = () => {
       const copyOverflow = Math.max(0, copyElement.scrollHeight - copyElement.clientHeight)
       const hasScrollableCopy = copyOverflow > 0
+      const zoomScrollDistance = window.innerHeight * VISUAL_CARD_ZOOM_SCROLL_MULTIPLIER
+      const fullscreenPanelScrollDistance = window.innerHeight * FULLSCREEN_PANEL_SCROLL_MULTIPLIER
+      const animatedScrollDistance = copyOverflow + zoomScrollDistance + fullscreenPanelScrollDistance
+      const hasZoomPhase = hasScrollableCopy
 
       trackElement.style.height = hasScrollableCopy
-        ? `${window.innerHeight + copyOverflow}px`
+        ? `${window.innerHeight + animatedScrollDistance}px`
         : ''
       isScrollGatedRef.current = hasScrollableCopy
+      copyPhaseEndRatioRef.current = hasZoomPhase
+        ? copyOverflow / animatedScrollDistance
+        : 1
+      zoomPhaseEndRatioRef.current = hasZoomPhase
+        ? (copyOverflow + zoomScrollDistance) / animatedScrollDistance
+        : 1
       trackElement.dataset.scrollGated = hasScrollableCopy ? 'true' : 'false'
+      trackElement.dataset.zoomEnabled = hasZoomPhase ? 'true' : 'false'
       copyElement.dataset.scrollGated = hasScrollableCopy ? 'true' : 'false'
     }
 
-    updateScrollTrackHeight()
+    const refreshScrollMetrics = () => {
+      updateScrollTrackHeight()
+      syncIntroScrollState(scrollYProgress.get())
+    }
 
-    const resizeObserver = new ResizeObserver(updateScrollTrackHeight)
+    refreshScrollMetrics()
+
+    const resizeObserver = new ResizeObserver(refreshScrollMetrics)
     resizeObserver.observe(copyElement)
 
-    window.addEventListener('resize', updateScrollTrackHeight)
+    const handleResize = () => {
+      refreshScrollMetrics()
+    }
+
+    window.addEventListener('resize', handleResize)
+    document.fonts?.ready.then(refreshScrollMetrics).catch(() => undefined)
 
     return () => {
       resizeObserver.disconnect()
-      window.removeEventListener('resize', updateScrollTrackHeight)
+      window.removeEventListener('resize', handleResize)
     }
-  }, [contentParagraphs, prefersReducedMotion])
+  }, [contentParagraphs.length, prefersReducedMotion, scrollYProgress, syncIntroScrollState])
 
-  useMotionValueEvent(scrollYProgress, 'change', (latestProgress) => {
-    if (prefersReducedMotion) {
+  useEffect(() => {
+    const trackElement = trackRef.current
+
+    if (!trackElement || prefersReducedMotion) {
       return
     }
 
-    const copyElement = copyRef.current
+    const resetVisualCardZoom = () => {
+      const visualCardElement = visualCardRef.current
+      const visualCardFloaterElement = visualCardFloaterRef.current
+      const fullscreenPanelStackElement = fullscreenPanelStackRef.current
 
-    if (!copyElement || copyElement.dataset.scrollGated !== 'true') {
-      return
+      if (!visualCardFloaterElement || visualCardFloaterElement.dataset.zoomActive !== 'true') {
+        return
+      }
+
+      clearVisualCardZoom(visualCardFloaterElement)
+      if (fullscreenPanelStackElement) {
+        clearFullscreenPanelProgress(fullscreenPanelStackElement)
+      }
+      zoomFromRectRef.current = null
+      visualCardElement?.style.removeProperty('opacity')
+      visualCardElement?.style.removeProperty('visibility')
+      visualCardFloaterElement.style.opacity = '0'
+      visualCardFloaterElement.style.visibility = 'hidden'
+      visualCardFloaterElement.dataset.panelAttached = 'false'
+      sectionRef.current?.setAttribute('data-zoom-active', 'false')
     }
 
-    const maxScrollTop = copyElement.scrollHeight - copyElement.clientHeight
+    const trackVisibilityObserver = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry.isIntersecting) {
+          resetVisualCardZoom()
+        }
+      },
+      { threshold: 0 },
+    )
 
-    if (maxScrollTop <= 0) {
-      return
+    trackVisibilityObserver.observe(trackElement)
+
+    return () => {
+      trackVisibilityObserver.disconnect()
     }
+  }, [prefersReducedMotion])
 
-    copyElement.scrollTop = latestProgress * maxScrollTop
-  })
+  useMotionValueEvent(scrollYProgress, 'change', syncIntroScrollState)
 
   useEffect(() => {
     const sectionElement = sectionRef.current
@@ -395,8 +668,8 @@ function IntroSection({
         ref={sectionRef}
         className="intro-section"
         aria-labelledby="intro-section-title"
-        initial={{ opacity: 0, y: 28 }}
-        whileInView={{ opacity: 1, y: 0 }}
+        initial={{ opacity: 0 }}
+        whileInView={{ opacity: 1 }}
         viewport={{ amount: 0.35, once: true }}
         transition={{ duration: 0.65, ease: [0.22, 1, 0.36, 1] }}
       >
@@ -411,11 +684,12 @@ function IntroSection({
         <div className="intro-section__container">
           <div className="intro-section__visual-shell">
             <motion.div
+              ref={visualCardRef}
               className="intro-section__visual-card"
               data-motion-target="intro-card"
-              style={{ clipPath: visualCardClipPath }}
-              initial={{ opacity: 0, scale: 0.96 }}
-              whileInView={{ opacity: 1, scale: 1 }}
+              data-zoom-active="false"
+              initial={{ opacity: 0 }}
+              whileInView={{ opacity: 1 }}
               viewport={{ amount: 0.45, once: true }}
               transition={{ duration: 0.7, delay: 0.08, ease: [0.22, 1, 0.36, 1] }}
             >
@@ -438,24 +712,58 @@ function IntroSection({
             viewport={{ amount: 0.45, once: true }}
             transition={{ duration: 0.65, delay: 0.14, ease: [0.22, 1, 0.36, 1] }}
           >
-            <h2 id="intro-section-title" className="intro-section__title">
-              {title}
-            </h2>
+            <motion.div className="intro-section__content-inner" style={{ opacity: contentOpacity }}>
+              <h2 id="intro-section-title" className="intro-section__title">
+                {title}
+              </h2>
 
-            <motion.div
-              ref={copyRef}
-              className="intro-section__copy"
-              data-prefers-reduced-motion={prefersReducedMotion ? 'true' : 'false'}
-            >
-              {contentParagraphs.map((paragraph, paragraphIndex) => (
-                <p key={`${paragraphIndex}-${paragraph.slice(0, 18)}`} className="intro-section__paragraph">
-                  {paragraph}
-                </p>
-              ))}
+              <motion.div
+                ref={copyRef}
+                className="intro-section__copy"
+                data-prefers-reduced-motion={prefersReducedMotion ? 'true' : 'false'}
+              >
+                {contentParagraphs.map((paragraph, paragraphIndex) => (
+                  <p key={`${paragraphIndex}-${paragraph.slice(0, 18)}`} className="intro-section__paragraph">
+                    {paragraph}
+                  </p>
+                ))}
+              </motion.div>
             </motion.div>
           </motion.div>
         </div>
       </motion.section>
+
+      <div
+        ref={visualCardFloaterRef}
+        className="intro-section__visual-card intro-section__visual-card--floater"
+        data-motion-target="intro-card-floater"
+        data-zoom-active="false"
+        data-panel-attached="false"
+      >
+        <div className="intro-section__zoom-panel-visual">
+          <span className="intro-section__visual-highlight" aria-hidden="true" />
+
+          <img
+            className="intro-section__visual-image"
+            src="/leaf_three.png"
+            alt=""
+            loading="lazy"
+          />
+        </div>
+
+        <div ref={fullscreenPanelStackRef} className="intro-section__fullscreen-panel-stack">
+          <div className="intro-section__fullscreen-panel intro-section__fullscreen-panel--visual">
+            <span className="intro-section__visual-highlight" aria-hidden="true" />
+
+            <img
+              className="intro-section__visual-image intro-section__fullscreen-visual-image"
+              src="/leaf_three.png"
+              alt=""
+              loading="lazy"
+            />
+          </div>
+        </div>
+      </div>
     </motion.div>
   )
 }

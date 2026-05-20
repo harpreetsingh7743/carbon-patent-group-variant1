@@ -16,3 +16,10 @@ interface IntroParticleSeed {
   size: number
   opacity: number
 }
+
+interface IntroVisualCardRect {
+  top: number
+  left: number
+  width: number
+  height: number
+}

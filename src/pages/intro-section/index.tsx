@@ -12,8 +12,7 @@ const PARTICLE_FILL_COLOR = 'rgba(134, 134, 134, 0.96)'
 const PARTICLE_IDLE_VELOCITY_THRESHOLD = 0.02
 const PARTICLE_IDLE_OFFSET_THRESHOLD = 0.02
 const VISUAL_CARD_ZOOM_SCROLL_MULTIPLIER = 1
-const FULLSCREEN_PANEL_SCROLL_MULTIPLIER = 1
-const FULLSCREEN_PANEL_REVEAL_DELAY = 0.08
+const POST_ZOOM_SCROLL_MULTIPLIER = 1
 
 const VISUAL_CARD_CLIP_START: readonly [number, number][] = [
   [0, 0],
@@ -120,7 +119,7 @@ function getVisualCardZoomProgress(
   return Math.min(1, (overallProgress - copyPhaseEndRatio) / (zoomPhaseEndRatio - copyPhaseEndRatio))
 }
 
-function getFullscreenPanelProgress(overallProgress: number, zoomPhaseEndRatio: number) {
+function getPostZoomReleaseProgress(overallProgress: number, zoomPhaseEndRatio: number) {
   if (zoomPhaseEndRatio >= 1 || overallProgress <= zoomPhaseEndRatio) {
     return 0
   }
@@ -128,12 +127,30 @@ function getFullscreenPanelProgress(overallProgress: number, zoomPhaseEndRatio: 
   return Math.min(1, (overallProgress - zoomPhaseEndRatio) / (1 - zoomPhaseEndRatio))
 }
 
-function getVisibleFullscreenPanelProgress(panelProgress: number) {
-  if (panelProgress <= FULLSCREEN_PANEL_REVEAL_DELAY) {
-    return 0
+function getLeafImageElement(visualCardElement: HTMLElement) {
+  return visualCardElement.querySelector<HTMLElement>(
+    '.intro-section__zoom-panel-visual .intro-section__visual-image',
+  )
+}
+
+function applyPostZoomRelease(visualCardElement: HTMLElement, releaseProgress: number) {
+  const leafImageElement = getLeafImageElement(visualCardElement)
+
+  if (!leafImageElement) {
+    return
   }
 
-  return Math.min(1, (panelProgress - FULLSCREEN_PANEL_REVEAL_DELAY) / (1 - FULLSCREEN_PANEL_REVEAL_DELAY))
+  const releaseOffset = releaseProgress * window.innerHeight * POST_ZOOM_SCROLL_MULTIPLIER
+
+  visualCardElement.dataset.releaseActive = 'true'
+  leafImageElement.style.transform = `translate3d(0, ${-releaseOffset}px, 0)`
+}
+
+function clearPostZoomRelease(visualCardElement: HTMLElement) {
+  const leafImageElement = getLeafImageElement(visualCardElement)
+
+  visualCardElement.dataset.releaseActive = 'false'
+  leafImageElement?.style.removeProperty('transform')
 }
 
 function applyVisualCardZoom(
@@ -144,9 +161,11 @@ function applyVisualCardZoom(
   const clampedProgress = Math.min(1, Math.max(0, zoomProgress))
   const toRect = getFullscreenTargetRect()
   const top = fromRect.top + (toRect.top - fromRect.top) * clampedProgress
-  const left = fromRect.left + (toRect.left - fromRect.left) * clampedProgress
-  const width = fromRect.width + (toRect.width - fromRect.width) * clampedProgress
   const height = fromRect.height + (toRect.height - fromRect.height) * clampedProgress
+  // Keep the left edge anchored longer so the card grows rightward instead of drifting to center.
+  const leftProgress = Math.pow(clampedProgress, 2.2)
+  const left = fromRect.left + (toRect.left - fromRect.left) * leftProgress
+  const width = fromRect.width + (toRect.width - fromRect.width) * clampedProgress
   const borderRadius = VISUAL_CARD_BORDER_RADIUS_REM * (1 - clampedProgress)
 
   visualCardElement.style.position = 'fixed'
@@ -175,19 +194,9 @@ function clearVisualCardZoom(visualCardElement: HTMLElement) {
   visualCardElement.style.removeProperty('clip-path')
   visualCardElement.style.removeProperty('z-index')
   visualCardElement.style.removeProperty('--visual-card-zoom-progress')
+  visualCardElement.dataset.releaseActive = 'false'
+  clearPostZoomRelease(visualCardElement)
   visualCardElement.dataset.zoomActive = 'false'
-}
-
-function applyFullscreenPanelProgress(panelStackElement: HTMLElement, panelProgress: number) {
-  const clampedProgress = getVisibleFullscreenPanelProgress(panelProgress)
-
-  panelStackElement.style.transform = `translate3d(0, ${clampedProgress * -50}%, 0)`
-  panelStackElement.style.setProperty('--fullscreen-panel-progress', String(clampedProgress))
-}
-
-function clearFullscreenPanelProgress(panelStackElement: HTMLElement) {
-  panelStackElement.style.removeProperty('transform')
-  panelStackElement.style.removeProperty('--fullscreen-panel-progress')
 }
 
 class IntroBackgroundParticle {
@@ -316,7 +325,6 @@ function IntroSection({
   const copyRef = useRef<HTMLDivElement | null>(null)
   const visualCardRef = useRef<HTMLDivElement | null>(null)
   const visualCardFloaterRef = useRef<HTMLDivElement | null>(null)
-  const fullscreenPanelStackRef = useRef<HTMLDivElement | null>(null)
   const isScrollGatedRef = useRef(false)
   const copyPhaseEndRatioRef = useRef(1)
   const zoomPhaseEndRatioRef = useRef(1)
@@ -353,7 +361,6 @@ function IntroSection({
       const copyElement = copyRef.current
       const visualCardElement = visualCardRef.current
       const visualCardFloaterElement = visualCardFloaterRef.current
-      const fullscreenPanelStackElement = fullscreenPanelStackRef.current
       const sectionElement = sectionRef.current
       const copyPhaseEndRatio = copyPhaseEndRatioRef.current
       const zoomPhaseEndRatio = zoomPhaseEndRatioRef.current
@@ -363,8 +370,8 @@ function IntroSection({
         copyPhaseEndRatio,
         zoomPhaseEndRatio,
       )
-      const fullscreenPanelProgress = getFullscreenPanelProgress(latestProgress, zoomPhaseEndRatio)
-      const visibleFullscreenPanelProgress = getVisibleFullscreenPanelProgress(fullscreenPanelProgress)
+      const releaseProgress = getPostZoomReleaseProgress(latestProgress, zoomPhaseEndRatio)
+      const activeZoomProgress = releaseProgress > 0 ? 1 : zoomProgress
 
       if (copyElement && copyElement.dataset.scrollGated === 'true') {
         const maxScrollTop = copyElement.scrollHeight - copyElement.clientHeight
@@ -374,11 +381,11 @@ function IntroSection({
         }
       }
 
-      if (!visualCardElement || !visualCardFloaterElement || !fullscreenPanelStackElement) {
+      if (!visualCardElement || !visualCardFloaterElement) {
         return
       }
 
-      if (zoomProgress > 0) {
+      if (activeZoomProgress > 0) {
         if (!zoomFromRectRef.current) {
           zoomFromRectRef.current = readVisualCardRect(visualCardElement)
         }
@@ -387,17 +394,20 @@ function IntroSection({
         visualCardElement.style.visibility = 'hidden'
         visualCardFloaterElement.style.opacity = '1'
         visualCardFloaterElement.style.visibility = 'visible'
-        visualCardFloaterElement.dataset.panelAttached =
-          visibleFullscreenPanelProgress > 0 ? 'true' : 'false'
-        applyVisualCardZoom(visualCardFloaterElement, zoomFromRectRef.current, zoomProgress)
-        applyFullscreenPanelProgress(fullscreenPanelStackElement, fullscreenPanelProgress)
+        applyVisualCardZoom(visualCardFloaterElement, zoomFromRectRef.current, activeZoomProgress)
+
+        if (releaseProgress > 0) {
+          applyPostZoomRelease(visualCardFloaterElement, releaseProgress)
+        } else {
+          clearPostZoomRelease(visualCardFloaterElement)
+        }
+
         sectionElement?.setAttribute('data-zoom-active', 'true')
         return
       }
 
       if (zoomFromRectRef.current) {
         clearVisualCardZoom(visualCardFloaterElement)
-        clearFullscreenPanelProgress(fullscreenPanelStackElement)
         zoomFromRectRef.current = null
       }
 
@@ -405,7 +415,6 @@ function IntroSection({
       visualCardElement.style.removeProperty('visibility')
       visualCardFloaterElement.style.opacity = '0'
       visualCardFloaterElement.style.visibility = 'hidden'
-      visualCardFloaterElement.dataset.panelAttached = 'false'
       sectionElement?.setAttribute('data-zoom-active', 'false')
 
       if (isScrollGatedRef.current) {
@@ -427,8 +436,8 @@ function IntroSection({
       const copyOverflow = Math.max(0, copyElement.scrollHeight - copyElement.clientHeight)
       const hasScrollableCopy = copyOverflow > 0
       const zoomScrollDistance = window.innerHeight * VISUAL_CARD_ZOOM_SCROLL_MULTIPLIER
-      const fullscreenPanelScrollDistance = window.innerHeight * FULLSCREEN_PANEL_SCROLL_MULTIPLIER
-      const animatedScrollDistance = copyOverflow + zoomScrollDistance + fullscreenPanelScrollDistance
+      const postZoomScrollDistance = window.innerHeight * POST_ZOOM_SCROLL_MULTIPLIER
+      const animatedScrollDistance = copyOverflow + zoomScrollDistance + postZoomScrollDistance
       const hasZoomPhase = hasScrollableCopy
 
       trackElement.style.height = hasScrollableCopy
@@ -479,22 +488,17 @@ function IntroSection({
     const resetVisualCardZoom = () => {
       const visualCardElement = visualCardRef.current
       const visualCardFloaterElement = visualCardFloaterRef.current
-      const fullscreenPanelStackElement = fullscreenPanelStackRef.current
 
       if (!visualCardFloaterElement || visualCardFloaterElement.dataset.zoomActive !== 'true') {
         return
       }
 
       clearVisualCardZoom(visualCardFloaterElement)
-      if (fullscreenPanelStackElement) {
-        clearFullscreenPanelProgress(fullscreenPanelStackElement)
-      }
       zoomFromRectRef.current = null
       visualCardElement?.style.removeProperty('opacity')
       visualCardElement?.style.removeProperty('visibility')
       visualCardFloaterElement.style.opacity = '0'
       visualCardFloaterElement.style.visibility = 'hidden'
-      visualCardFloaterElement.dataset.panelAttached = 'false'
       sectionRef.current?.setAttribute('data-zoom-active', 'false')
     }
 
@@ -738,7 +742,6 @@ function IntroSection({
         className="intro-section__visual-card intro-section__visual-card--floater"
         data-motion-target="intro-card-floater"
         data-zoom-active="false"
-        data-panel-attached="false"
       >
         <div className="intro-section__zoom-panel-visual">
           <span className="intro-section__visual-highlight" aria-hidden="true" />
@@ -749,19 +752,6 @@ function IntroSection({
             alt=""
             loading="lazy"
           />
-        </div>
-
-        <div ref={fullscreenPanelStackRef} className="intro-section__fullscreen-panel-stack">
-          <div className="intro-section__fullscreen-panel intro-section__fullscreen-panel--visual">
-            <span className="intro-section__visual-highlight" aria-hidden="true" />
-
-            <img
-              className="intro-section__visual-image intro-section__fullscreen-visual-image"
-              src="/leaf_three.png"
-              alt=""
-              loading="lazy"
-            />
-          </div>
         </div>
       </div>
     </motion.div>

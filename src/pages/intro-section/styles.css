@@ -305,7 +305,13 @@
     var(--leaf-blend-progress, 0) *
       (
         1 - var(--visual-card-zoom-progress, 0) *
-          (1 - var(--secondary-image-opacity-end, var(--intro-secondary-leaf-opacity-end, 1)))
+          (
+            1 -
+              var(
+                --secondary-image-opacity-end,
+                var(--intro-secondary-leaf-opacity-end, 1)
+              )
+          )
       )
   );
   filter: grayscale(var(--visual-card-zoom-progress, 0));
@@ -342,8 +348,8 @@
 
 .intro-section__why-carbon-icon {
   flex-shrink: 0;
-  width: 3.25rem;
-  height: 3.25rem;
+  width: 7.25rem;
+  height: 7.25rem;
   border-radius: 0.85rem;
   background: var(--color-hero-green-circle);
   color: var(--color-main-background);
@@ -353,8 +359,8 @@
 }
 
 .intro-section__why-carbon-icon svg {
-  width: 1.55rem;
-  height: 1.55rem;
+  width: 3.55rem;
+  height: 3.55rem;
 }
 
 .intro-section__why-carbon-counter {
@@ -429,7 +435,7 @@
 .intro-section__why-carbon-title {
   margin: 0;
   font-family: var(--font-family-primary);
-  font-size: clamp(2.2rem, 5vw, 4rem);
+  font-size: clamp(3.2rem, 6vw, 5rem);
   font-weight: 700;
   line-height: 1.02;
   letter-spacing: -0.045em;
@@ -440,9 +446,9 @@
 
 .intro-section__why-carbon-description {
   margin: 0;
-  max-width: 34rem;
+  /* max-width: 34rem; */
   font-family: var(--font-family-primary);
-  font-size: clamp(1.02rem, 1.4vw, 1.2rem);
+  font-size: clamp(2.02rem, 2.4vw, 2.2rem);
   font-weight: 400;
   line-height: 1.75;
   letter-spacing: 0.01em;

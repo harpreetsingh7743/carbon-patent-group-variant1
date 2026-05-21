@@ -44,4 +44,5 @@
   --color-intro-fullscreen-panel-red-deep: #8f1515;
   --color-intro-fullscreen-panel-red-text: #ffffff;
   --color-intro-fullscreen-panel-red-muted: rgba(255, 255, 255, 0.78);
+  --intro-secondary-leaf-opacity-end: 0.15;
 }

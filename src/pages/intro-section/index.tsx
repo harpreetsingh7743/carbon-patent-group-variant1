@@ -41,20 +41,47 @@ const whyCarbonSteps: WhyCarbonStep[] = [
   },
 ]
 
-const whyCarbonSlideEase = [0.22, 1, 0.36, 1] as const
+const whyCarbonSlideEase = [0.16, 1, 0.3, 1] as const
 
-const whyCarbonHorizontalSlideVariants = {
+const whyCarbonTitleSlideVariants = {
   enter: (direction: number) => ({
-    x: direction > 0 ? '105%' : '-105%',
+    x: direction > 0 ? 40 : -40,
+    y: 28,
     opacity: 0,
+    filter: 'blur(8px)',
   }),
   center: {
     x: 0,
+    y: 0,
     opacity: 1,
+    filter: 'blur(0px)',
   },
   exit: (direction: number) => ({
-    x: direction > 0 ? '-105%' : '105%',
+    x: direction > 0 ? -28 : 28,
+    y: -18,
     opacity: 0,
+    filter: 'blur(6px)',
+  }),
+}
+
+const whyCarbonDescriptionSlideVariants = {
+  enter: (direction: number) => ({
+    x: direction > 0 ? 32 : -32,
+    y: 22,
+    opacity: 0,
+    filter: 'blur(6px)',
+  }),
+  center: {
+    x: 0,
+    y: 0,
+    opacity: 1,
+    filter: 'blur(0px)',
+  },
+  exit: (direction: number) => ({
+    x: direction > 0 ? -24 : 24,
+    y: -14,
+    opacity: 0,
+    filter: 'blur(4px)',
   }),
 }
 
@@ -412,6 +439,23 @@ function getOverallProgressForReleaseStep(
   return zoomPhaseEndRatio + releaseProgress * (1 - zoomPhaseEndRatio)
 }
 
+function createWhyCarbonTextTransition(
+  prefersReducedMotion: boolean,
+  { delay = 0, duration = 0.72 }: { delay?: number; duration?: number } = {},
+) {
+  if (prefersReducedMotion) {
+    return { duration: 0 }
+  }
+
+  return {
+    duration,
+    ease: whyCarbonSlideEase,
+    delay,
+    opacity: { duration: duration * 0.78, ease: whyCarbonSlideEase, delay },
+    filter: { duration: duration * 0.84, ease: whyCarbonSlideEase, delay },
+  }
+}
+
 function formatWhyCarbonCounter(stepIndex: number) {
   return String(stepIndex + 1).padStart(2, '0')
 }
@@ -428,9 +472,14 @@ function WhyCarbonOverlay({
   }
 
   const counterLabel = formatWhyCarbonCounter(activeStepIndex)
-  const transition = prefersReducedMotion
+  const counterTransition = prefersReducedMotion
     ? { duration: 0 }
     : { duration: 0.55, ease: whyCarbonSlideEase }
+  const titleTransition = createWhyCarbonTextTransition(prefersReducedMotion)
+  const descriptionTransition = createWhyCarbonTextTransition(prefersReducedMotion, {
+    delay: 0.1,
+    duration: 0.78,
+  })
 
   return (
     <div className="intro-section__why-carbon" aria-live="polite">
@@ -458,7 +507,7 @@ function WhyCarbonOverlay({
                 initial="enter"
                 animate="center"
                 exit="exit"
-                transition={transition}
+                transition={counterTransition}
               >
                 {counterLabel}
               </motion.span>
@@ -468,16 +517,16 @@ function WhyCarbonOverlay({
 
         <div className="intro-section__why-carbon-content">
           <div className="intro-section__why-carbon-title-wrap">
-            <AnimatePresence mode="wait" custom={slideDirection} initial={false}>
+            <AnimatePresence mode="popLayout" custom={slideDirection} initial={false}>
               <motion.h3
                 key={activeStep.title}
                 className="intro-section__why-carbon-title"
                 custom={slideDirection}
-                variants={whyCarbonHorizontalSlideVariants}
+                variants={whyCarbonTitleSlideVariants}
                 initial="enter"
                 animate="center"
                 exit="exit"
-                transition={transition}
+                transition={titleTransition}
               >
                 {activeStep.title}
               </motion.h3>
@@ -485,19 +534,16 @@ function WhyCarbonOverlay({
           </div>
 
           <div className="intro-section__why-carbon-description-wrap">
-            <AnimatePresence mode="wait" custom={slideDirection} initial={false}>
+            <AnimatePresence mode="popLayout" custom={slideDirection} initial={false}>
               <motion.p
                 key={activeStep.description}
                 className="intro-section__why-carbon-description"
                 custom={slideDirection}
-                variants={whyCarbonHorizontalSlideVariants}
+                variants={whyCarbonDescriptionSlideVariants}
                 initial="enter"
                 animate="center"
                 exit="exit"
-                transition={{
-                  ...transition,
-                  delay: prefersReducedMotion ? 0 : 0.12,
-                }}
+                transition={descriptionTransition}
               >
                 {activeStep.description}
               </motion.p>

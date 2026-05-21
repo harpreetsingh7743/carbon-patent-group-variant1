@@ -126,7 +126,7 @@
     0,
     1
   );
-  --secondary-image-opacity-end: 0.65;
+  --secondary-image-opacity-end: var(--intro-secondary-leaf-opacity-end);
 }
 
 .intro-section__visual-card--floater[data-zoom-active="true"]::before {
@@ -305,11 +305,10 @@
     var(--leaf-blend-progress, 0) *
       (
         1 - var(--visual-card-zoom-progress, 0) *
-          (1 - var(--secondary-image-opacity-end, 0.65))
+          (1 - var(--secondary-image-opacity-end, var(--intro-secondary-leaf-opacity-end, 1)))
       )
   );
-  filter: grayscale(var(--visual-card-zoom-progress, 0))
-    drop-shadow(0 24px 38px var(--color-intro-image-shadow));
+  filter: grayscale(var(--visual-card-zoom-progress, 0));
 }
 
 .intro-section__visual-card--floater[data-zoom-active="true"][data-release-active="true"]
@@ -384,7 +383,8 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 1.35rem;
+  justify-content: center;
+  gap: 1.75rem;
   padding-inline: 10rem;
 }
 
@@ -393,6 +393,21 @@
   position: relative;
   overflow: hidden;
   width: 100%;
+  isolation: isolate;
+  -webkit-mask-image: linear-gradient(
+    180deg,
+    transparent 0%,
+    #000 14%,
+    #000 86%,
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    180deg,
+    transparent 0%,
+    #000 14%,
+    #000 86%,
+    transparent 100%
+  );
 }
 
 .intro-section__why-carbon-title-wrap {
@@ -403,24 +418,36 @@
   min-height: clamp(5rem, 12vw, 8rem);
 }
 
+.intro-section__why-carbon-title,
+.intro-section__why-carbon-description {
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 100%;
+  will-change: transform, opacity, filter;
+}
+
 .intro-section__why-carbon-title {
   margin: 0;
   font-family: var(--font-family-primary);
   font-size: clamp(2.2rem, 5vw, 4rem);
   font-weight: 700;
-  line-height: 0.98;
-  letter-spacing: -0.04em;
+  line-height: 1.02;
+  letter-spacing: -0.045em;
   color: var(--color-hero-green-circle);
+  text-shadow: 0 10px 28px var(--color-hero-green-circle-soft);
+  text-wrap: balance;
 }
 
 .intro-section__why-carbon-description {
   margin: 0;
-  max-width: 31rem;
+  max-width: 34rem;
   font-family: var(--font-family-primary);
-  font-size: clamp(1rem, 1.35vw, 1.125rem);
+  font-size: clamp(1.02rem, 1.4vw, 1.2rem);
   font-weight: 400;
-  line-height: 1.72;
-  color: rgba(245, 247, 255, 0.82);
+  line-height: 1.75;
+  letter-spacing: 0.01em;
+  color: var(--color-hero-description-text);
+  text-wrap: pretty;
 }
 
 .intro-section__content {

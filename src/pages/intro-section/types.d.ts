@@ -23,3 +23,14 @@ interface IntroVisualCardRect {
   width: number
   height: number
 }
+
+interface WhyCarbonStep {
+  title: string
+  description: string
+}
+
+interface WhyCarbonOverlayProps {
+  activeStepIndex: number
+  slideDirection: number
+  prefersReducedMotion: boolean
+}

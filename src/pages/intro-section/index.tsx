@@ -1,5 +1,12 @@
-import { motion, useMotionValueEvent, useReducedMotion, useScroll, useTransform } from 'framer-motion'
-import { useCallback, useEffect, useLayoutEffect, useRef } from 'react'
+import {
+  AnimatePresence,
+  motion,
+  useMotionValueEvent,
+  useReducedMotion,
+  useScroll,
+  useTransform,
+} from 'framer-motion'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 import './styles.css'
 
@@ -11,8 +18,68 @@ const PARTICLE_GLOW_COLOR = 'rgba(149, 149, 149, 0.16)'
 const PARTICLE_FILL_COLOR = 'rgba(134, 134, 134, 0.96)'
 const PARTICLE_IDLE_VELOCITY_THRESHOLD = 0.02
 const PARTICLE_IDLE_OFFSET_THRESHOLD = 0.02
-const VISUAL_CARD_ZOOM_SCROLL_MULTIPLIER = 1
+const VISUAL_CARD_ZOOM_SCROLL_MULTIPLIER = 3
 const POST_ZOOM_SCROLL_MULTIPLIER = 1
+const WHY_CARBON_STEP_SCROLL_MULTIPLIER = 1
+const ZOOM_STEP_WHEEL_COOLDOWN_MS = 700
+
+const whyCarbonSteps: WhyCarbonStep[] = [
+  {
+    title: 'Prosecution is all we do',
+    description:
+      'Our team includes biotech and software PhDs, engineers, and specialists in plant varieties and cannabis.',
+  },
+  {
+    title: 'Depth across complex fields',
+    description:
+      'We handle life sciences, chemistry, medical devices, software, and emerging technologies with focused expertise.',
+  },
+  {
+    title: 'Advice tied to commercial reality',
+    description:
+      'We connect technical detail to business outcomes so your patent strategy supports real-world growth.',
+  },
+]
+
+const whyCarbonSlideEase = [0.22, 1, 0.36, 1] as const
+
+const whyCarbonHorizontalSlideVariants = {
+  enter: (direction: number) => ({
+    x: direction > 0 ? '105%' : '-105%',
+    opacity: 0,
+  }),
+  center: {
+    x: 0,
+    opacity: 1,
+  },
+  exit: (direction: number) => ({
+    x: direction > 0 ? '-105%' : '105%',
+    opacity: 0,
+  }),
+}
+
+const whyCarbonCounterSlideVariants = {
+  enter: (direction: number) => ({
+    y: direction > 0 ? '100%' : '-100%',
+    opacity: 0,
+  }),
+  center: {
+    y: 0,
+    opacity: 1,
+  },
+  exit: (direction: number) => ({
+    y: direction > 0 ? '-100%' : '100%',
+    opacity: 0,
+  }),
+}
+
+const ZOOM_PROGRESS_SEGMENTS: readonly { inputEnd: number; outputEnd: number }[] = [
+  { inputEnd: 0.25, outputEnd: 0.2 },
+  { inputEnd: 0.5, outputEnd: 0.7 },
+  { inputEnd: 1, outputEnd: 1 },
+]
+
+const ZOOM_STEP_TARGETS = [0, 0.2, 0.7, 1] as const
 
 const VISUAL_CARD_CLIP_START: readonly [number, number][] = [
   [0, 0],
@@ -119,6 +186,95 @@ function getVisualCardZoomProgress(
   return Math.min(1, (overallProgress - copyPhaseEndRatio) / (zoomPhaseEndRatio - copyPhaseEndRatio))
 }
 
+function remapZoomProgress(linearProgress: number) {
+  const clampedProgress = Math.min(1, Math.max(0, linearProgress))
+  let previousInputEnd = 0
+  let previousOutputEnd = 0
+
+  for (const segment of ZOOM_PROGRESS_SEGMENTS) {
+    if (clampedProgress <= segment.inputEnd) {
+      const inputSpan = segment.inputEnd - previousInputEnd
+      const outputSpan = segment.outputEnd - previousOutputEnd
+      const segmentProgress = inputSpan > 0 ? (clampedProgress - previousInputEnd) / inputSpan : 0
+
+      return previousOutputEnd + segmentProgress * outputSpan
+    }
+
+    previousInputEnd = segment.inputEnd
+    previousOutputEnd = segment.outputEnd
+  }
+
+  return 1
+}
+
+function inverseRemapZoomProgress(remappedProgress: number) {
+  const clampedProgress = Math.min(1, Math.max(0, remappedProgress))
+  let previousInputEnd = 0
+  let previousOutputEnd = 0
+
+  for (const segment of ZOOM_PROGRESS_SEGMENTS) {
+    if (clampedProgress <= segment.outputEnd) {
+      const outputSpan = segment.outputEnd - previousOutputEnd
+      const inputSpan = segment.inputEnd - previousInputEnd
+      const segmentProgress =
+        outputSpan > 0 ? (clampedProgress - previousOutputEnd) / outputSpan : 0
+
+      return previousInputEnd + segmentProgress * inputSpan
+    }
+
+    previousInputEnd = segment.inputEnd
+    previousOutputEnd = segment.outputEnd
+  }
+
+  return 1
+}
+
+function getOverallProgressForRemappedZoom(
+  remappedProgress: number,
+  copyPhaseEndRatio: number,
+  zoomPhaseEndRatio: number,
+) {
+  const linearZoomProgress = inverseRemapZoomProgress(remappedProgress)
+
+  return copyPhaseEndRatio + linearZoomProgress * (zoomPhaseEndRatio - copyPhaseEndRatio)
+}
+
+function getTargetScrollYForOverallProgress(
+  trackElement: HTMLElement,
+  currentScrollY: number,
+  currentOverallProgress: number,
+  targetOverallProgress: number,
+) {
+  const maxScroll = Math.max(0, trackElement.offsetHeight - window.innerHeight)
+  const trackStartScrollY = currentScrollY - currentOverallProgress * maxScroll
+
+  return trackStartScrollY + targetOverallProgress * maxScroll
+}
+
+function getNearestZoomStepIndex(remappedProgress: number) {
+  let nearestIndex = 0
+  let nearestDistance = Infinity
+
+  ZOOM_STEP_TARGETS.forEach((target, index) => {
+    const distance = Math.abs(target - remappedProgress)
+
+    if (distance < nearestDistance) {
+      nearestDistance = distance
+      nearestIndex = index
+    }
+  })
+
+  return nearestIndex
+}
+
+function isInZoomScrollPhase(
+  overallProgress: number,
+  copyPhaseEndRatio: number,
+  zoomPhaseEndRatio: number,
+) {
+  return overallProgress >= copyPhaseEndRatio && overallProgress <= zoomPhaseEndRatio
+}
+
 function getPostZoomReleaseProgress(overallProgress: number, zoomPhaseEndRatio: number) {
   if (zoomPhaseEndRatio >= 1 || overallProgress <= zoomPhaseEndRatio) {
     return 0
@@ -127,30 +283,59 @@ function getPostZoomReleaseProgress(overallProgress: number, zoomPhaseEndRatio: 
   return Math.min(1, (overallProgress - zoomPhaseEndRatio) / (1 - zoomPhaseEndRatio))
 }
 
-function getLeafImageElement(visualCardElement: HTMLElement) {
-  return visualCardElement.querySelector<HTMLElement>(
-    '.intro-section__zoom-panel-visual .intro-section__visual-image',
+function getLeafImageElements(visualCardElement: HTMLElement) {
+  return Array.from(
+    visualCardElement.querySelectorAll<HTMLElement>(
+      '.intro-section__zoom-panel-visual .intro-section__visual-image',
+    ),
   )
 }
 
-function applyPostZoomRelease(visualCardElement: HTMLElement, releaseProgress: number) {
-  const leafImageElement = getLeafImageElement(visualCardElement)
-
-  if (!leafImageElement) {
+function pinReleaseLeafToViewport(
+  visualCardElement: HTMLElement,
+  leafImageElements: HTMLElement[],
+) {
+  if (!leafImageElements.length || visualCardElement.dataset.releasePinned === 'true') {
     return
   }
 
-  const releaseOffset = releaseProgress * window.innerHeight * POST_ZOOM_SCROLL_MULTIPLIER
+  const rect = leafImageElements[0].getBoundingClientRect()
+
+  leafImageElements.forEach((leafImageElement) => {
+    leafImageElement.style.position = 'fixed'
+    leafImageElement.style.left = `${rect.left}px`
+    leafImageElement.style.top = `${rect.top}px`
+    leafImageElement.style.width = `${rect.width}px`
+    leafImageElement.style.transform = 'none'
+    leafImageElement.style.zIndex = '81'
+  })
+  visualCardElement.dataset.releasePinned = 'true'
+}
+
+function applyPostZoomRelease(visualCardElement: HTMLElement, _releaseProgress: number) {
+  const leafImageElements = getLeafImageElements(visualCardElement)
+
+  if (!leafImageElements.length) {
+    return
+  }
 
   visualCardElement.dataset.releaseActive = 'true'
-  leafImageElement.style.transform = `translate3d(0, ${-releaseOffset}px, 0)`
+  pinReleaseLeafToViewport(visualCardElement, leafImageElements)
 }
 
 function clearPostZoomRelease(visualCardElement: HTMLElement) {
-  const leafImageElement = getLeafImageElement(visualCardElement)
+  const leafImageElements = getLeafImageElements(visualCardElement)
 
   visualCardElement.dataset.releaseActive = 'false'
-  leafImageElement?.style.removeProperty('transform')
+  visualCardElement.dataset.releasePinned = 'false'
+  leafImageElements.forEach((leafImageElement) => {
+    leafImageElement.style.removeProperty('position')
+    leafImageElement.style.removeProperty('left')
+    leafImageElement.style.removeProperty('top')
+    leafImageElement.style.removeProperty('width')
+    leafImageElement.style.removeProperty('transform')
+    leafImageElement.style.removeProperty('z-index')
+  })
 }
 
 function applyVisualCardZoom(
@@ -197,6 +382,131 @@ function clearVisualCardZoom(visualCardElement: HTMLElement) {
   visualCardElement.dataset.releaseActive = 'false'
   clearPostZoomRelease(visualCardElement)
   visualCardElement.dataset.zoomActive = 'false'
+}
+
+function isInReleaseScrollPhase(overallProgress: number, zoomPhaseEndRatio: number) {
+  return overallProgress > zoomPhaseEndRatio && zoomPhaseEndRatio < 1
+}
+
+function getReleaseStepIndexFromProgress(releaseProgress: number, stepCount: number) {
+  if (stepCount <= 1) {
+    return 0
+  }
+
+  const index = Math.round(releaseProgress * (stepCount - 1))
+
+  return Math.min(stepCount - 1, Math.max(0, index))
+}
+
+function getOverallProgressForReleaseStep(
+  stepIndex: number,
+  stepCount: number,
+  zoomPhaseEndRatio: number,
+) {
+  if (stepCount <= 1) {
+    return 1
+  }
+
+  const releaseProgress = stepIndex / (stepCount - 1)
+
+  return zoomPhaseEndRatio + releaseProgress * (1 - zoomPhaseEndRatio)
+}
+
+function formatWhyCarbonCounter(stepIndex: number) {
+  return String(stepIndex + 1).padStart(2, '0')
+}
+
+function WhyCarbonOverlay({
+  activeStepIndex,
+  slideDirection,
+  prefersReducedMotion,
+}: WhyCarbonOverlayProps) {
+  const activeStep = whyCarbonSteps[activeStepIndex]
+
+  if (!activeStep) {
+    return null
+  }
+
+  const counterLabel = formatWhyCarbonCounter(activeStepIndex)
+  const transition = prefersReducedMotion
+    ? { duration: 0 }
+    : { duration: 0.55, ease: whyCarbonSlideEase }
+
+  return (
+    <div className="intro-section__why-carbon" aria-live="polite">
+      <div className="intro-section__why-carbon-shell">
+        <div className="intro-section__why-carbon-header">
+          <div className="intro-section__why-carbon-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="12" cy="12" r="4.25" stroke="currentColor" strokeWidth="1.75" />
+              <path
+                d="M12 2.5V5.5M12 18.5V21.5M4.6 4.6L6.7 6.7M17.3 17.3L19.4 19.4M2.5 12H5.5M18.5 12H21.5M4.6 19.4L6.7 17.3M17.3 6.7L19.4 4.6"
+                stroke="currentColor"
+                strokeWidth="1.75"
+                strokeLinecap="round"
+              />
+            </svg>
+          </div>
+
+          <div className="intro-section__why-carbon-counter" aria-hidden="true">
+            <AnimatePresence mode="popLayout" custom={slideDirection} initial={false}>
+              <motion.span
+                key={counterLabel}
+                className="intro-section__why-carbon-counter-value"
+                custom={slideDirection}
+                variants={whyCarbonCounterSlideVariants}
+                initial="enter"
+                animate="center"
+                exit="exit"
+                transition={transition}
+              >
+                {counterLabel}
+              </motion.span>
+            </AnimatePresence>
+          </div>
+        </div>
+
+        <div className="intro-section__why-carbon-content">
+          <div className="intro-section__why-carbon-title-wrap">
+            <AnimatePresence mode="wait" custom={slideDirection} initial={false}>
+              <motion.h3
+                key={activeStep.title}
+                className="intro-section__why-carbon-title"
+                custom={slideDirection}
+                variants={whyCarbonHorizontalSlideVariants}
+                initial="enter"
+                animate="center"
+                exit="exit"
+                transition={transition}
+              >
+                {activeStep.title}
+              </motion.h3>
+            </AnimatePresence>
+          </div>
+
+          <div className="intro-section__why-carbon-description-wrap">
+            <AnimatePresence mode="wait" custom={slideDirection} initial={false}>
+              <motion.p
+                key={activeStep.description}
+                className="intro-section__why-carbon-description"
+                custom={slideDirection}
+                variants={whyCarbonHorizontalSlideVariants}
+                initial="enter"
+                animate="center"
+                exit="exit"
+                transition={{
+                  ...transition,
+                  delay: prefersReducedMotion ? 0 : 0.12,
+                }}
+              >
+                {activeStep.description}
+              </motion.p>
+            </AnimatePresence>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 class IntroBackgroundParticle {
@@ -329,9 +639,34 @@ function IntroSection({
   const copyPhaseEndRatioRef = useRef(1)
   const zoomPhaseEndRatioRef = useRef(1)
   const zoomFromRectRef = useRef<IntroVisualCardRect | null>(null)
+  const zoomStepIndexRef = useRef(0)
+  const isZoomStepScrollingRef = useRef(false)
+  const whyCarbonStepIndexRef = useRef(0)
+  const isReleaseStepScrollingRef = useRef(false)
+  const isWhyCarbonVisibleRef = useRef(false)
   const particleCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const prefersReducedMotion = useReducedMotion()
+  const [whyCarbonStepIndex, setWhyCarbonStepIndex] = useState(0)
+  const [whyCarbonSlideDirection, setWhyCarbonSlideDirection] = useState(1)
+  const [isWhyCarbonVisible, setIsWhyCarbonVisible] = useState(false)
   const contentParagraphs = paragraphs.length > 0 ? paragraphs : defaultParagraphs
+
+  const updateWhyCarbonStep = useCallback((nextStepIndex: number) => {
+    const clampedStepIndex = Math.min(
+      whyCarbonSteps.length - 1,
+      Math.max(0, nextStepIndex),
+    )
+
+    if (clampedStepIndex === whyCarbonStepIndexRef.current) {
+      return
+    }
+
+    const slideDirection = clampedStepIndex > whyCarbonStepIndexRef.current ? 1 : -1
+
+    whyCarbonStepIndexRef.current = clampedStepIndex
+    setWhyCarbonStepIndex(clampedStepIndex)
+    setWhyCarbonSlideDirection(slideDirection)
+  }, [])
 
   const { scrollYProgress } = useScroll({
     target: trackRef,
@@ -343,10 +678,12 @@ function IntroSection({
       return 1
     }
 
-    const zoomProgress = getVisualCardZoomProgress(
-      latestProgress,
-      copyPhaseEndRatioRef.current,
-      zoomPhaseEndRatioRef.current,
+    const zoomProgress = remapZoomProgress(
+      getVisualCardZoomProgress(
+        latestProgress,
+        copyPhaseEndRatioRef.current,
+        zoomPhaseEndRatioRef.current,
+      ),
     )
 
     return 1 - zoomProgress * 0.92
@@ -365,13 +702,48 @@ function IntroSection({
       const copyPhaseEndRatio = copyPhaseEndRatioRef.current
       const zoomPhaseEndRatio = zoomPhaseEndRatioRef.current
       const copyScrollProgress = getCopyScrollProgress(latestProgress, copyPhaseEndRatio)
-      const zoomProgress = getVisualCardZoomProgress(
+      const linearZoomProgress = getVisualCardZoomProgress(
         latestProgress,
         copyPhaseEndRatio,
         zoomPhaseEndRatio,
       )
+      const zoomProgress = remapZoomProgress(linearZoomProgress)
       const releaseProgress = getPostZoomReleaseProgress(latestProgress, zoomPhaseEndRatio)
       const activeZoomProgress = releaseProgress > 0 ? 1 : zoomProgress
+
+      if (
+        !isZoomStepScrollingRef.current &&
+        isInZoomScrollPhase(latestProgress, copyPhaseEndRatio, zoomPhaseEndRatio) &&
+        releaseProgress === 0
+      ) {
+        zoomStepIndexRef.current = getNearestZoomStepIndex(zoomProgress)
+      }
+
+      if (releaseProgress === 0 && !isInZoomScrollPhase(latestProgress, copyPhaseEndRatio, zoomPhaseEndRatio)) {
+        zoomStepIndexRef.current = linearZoomProgress > 0 ? ZOOM_STEP_TARGETS.length - 1 : 0
+      }
+
+      const shouldShowWhyCarbon =
+        activeZoomProgress > 0 && latestProgress >= zoomPhaseEndRatio - 0.0001
+
+      if (shouldShowWhyCarbon !== isWhyCarbonVisibleRef.current) {
+        isWhyCarbonVisibleRef.current = shouldShowWhyCarbon
+        setIsWhyCarbonVisible(shouldShowWhyCarbon)
+      }
+
+      if (
+        shouldShowWhyCarbon &&
+        !isReleaseStepScrollingRef.current &&
+        releaseProgress >= 0
+      ) {
+        updateWhyCarbonStep(getReleaseStepIndexFromProgress(releaseProgress, whyCarbonSteps.length))
+      }
+
+      if (!shouldShowWhyCarbon && whyCarbonStepIndexRef.current !== 0) {
+        whyCarbonStepIndexRef.current = 0
+        setWhyCarbonStepIndex(0)
+        setWhyCarbonSlideDirection(1)
+      }
 
       if (copyElement && copyElement.dataset.scrollGated === 'true') {
         const maxScrollTop = copyElement.scrollHeight - copyElement.clientHeight
@@ -421,7 +793,7 @@ function IntroSection({
         visualCardElement.style.clipPath = getVisualCardClipPath(copyScrollProgress)
       }
     },
-    [prefersReducedMotion],
+    [prefersReducedMotion, updateWhyCarbonStep],
   )
 
   useLayoutEffect(() => {
@@ -436,7 +808,11 @@ function IntroSection({
       const copyOverflow = Math.max(0, copyElement.scrollHeight - copyElement.clientHeight)
       const hasScrollableCopy = copyOverflow > 0
       const zoomScrollDistance = window.innerHeight * VISUAL_CARD_ZOOM_SCROLL_MULTIPLIER
-      const postZoomScrollDistance = window.innerHeight * POST_ZOOM_SCROLL_MULTIPLIER
+      const postZoomScrollDistance =
+        window.innerHeight *
+        POST_ZOOM_SCROLL_MULTIPLIER *
+        WHY_CARBON_STEP_SCROLL_MULTIPLIER *
+        whyCarbonSteps.length
       const animatedScrollDistance = copyOverflow + zoomScrollDistance + postZoomScrollDistance
       const hasZoomPhase = hasScrollableCopy
 
@@ -519,6 +895,113 @@ function IntroSection({
   }, [prefersReducedMotion])
 
   useMotionValueEvent(scrollYProgress, 'change', syncIntroScrollState)
+
+  useEffect(() => {
+    if (prefersReducedMotion) {
+      return
+    }
+
+    let scrollCooldownTimer = 0
+
+    const handleWheel = (event: WheelEvent) => {
+      const trackElement = trackRef.current
+
+      if (
+        !trackElement ||
+        !isScrollGatedRef.current ||
+        isZoomStepScrollingRef.current ||
+        isReleaseStepScrollingRef.current
+      ) {
+        return
+      }
+
+      const copyPhaseEndRatio = copyPhaseEndRatioRef.current
+      const zoomPhaseEndRatio = zoomPhaseEndRatioRef.current
+      const currentOverallProgress = scrollYProgress.get()
+      const releaseProgress = getPostZoomReleaseProgress(currentOverallProgress, zoomPhaseEndRatio)
+
+      if (isInReleaseScrollPhase(currentOverallProgress, zoomPhaseEndRatio)) {
+        const direction = event.deltaY > 0 ? 1 : -1
+        const nextStepIndex = whyCarbonStepIndexRef.current + direction
+
+        if (nextStepIndex < 0 || nextStepIndex >= whyCarbonSteps.length) {
+          return
+        }
+
+        event.preventDefault()
+
+        const targetOverallProgress = getOverallProgressForReleaseStep(
+          nextStepIndex,
+          whyCarbonSteps.length,
+          zoomPhaseEndRatio,
+        )
+        const targetScrollY = getTargetScrollYForOverallProgress(
+          trackElement,
+          window.scrollY,
+          currentOverallProgress,
+          targetOverallProgress,
+        )
+
+        updateWhyCarbonStep(nextStepIndex)
+        isReleaseStepScrollingRef.current = true
+        window.scrollTo({ top: targetScrollY, behavior: 'smooth' })
+
+        window.clearTimeout(scrollCooldownTimer)
+        scrollCooldownTimer = window.setTimeout(() => {
+          isReleaseStepScrollingRef.current = false
+        }, ZOOM_STEP_WHEEL_COOLDOWN_MS)
+
+        return
+      }
+
+      if (
+        !isInZoomScrollPhase(currentOverallProgress, copyPhaseEndRatio, zoomPhaseEndRatio) ||
+        releaseProgress > 0
+      ) {
+        return
+      }
+
+      const direction = event.deltaY > 0 ? 1 : -1
+      const nextStepIndex = zoomStepIndexRef.current + direction
+
+      if (nextStepIndex < 0 || nextStepIndex >= ZOOM_STEP_TARGETS.length) {
+        return
+      }
+
+      event.preventDefault()
+
+      const targetRemappedProgress = ZOOM_STEP_TARGETS[nextStepIndex]
+      const targetOverallProgress = getOverallProgressForRemappedZoom(
+        targetRemappedProgress,
+        copyPhaseEndRatio,
+        zoomPhaseEndRatio,
+      )
+      const targetScrollY = getTargetScrollYForOverallProgress(
+        trackElement,
+        window.scrollY,
+        currentOverallProgress,
+        targetOverallProgress,
+      )
+
+      zoomStepIndexRef.current = nextStepIndex
+      isZoomStepScrollingRef.current = true
+      window.scrollTo({ top: targetScrollY, behavior: 'smooth' })
+
+      window.clearTimeout(scrollCooldownTimer)
+      scrollCooldownTimer = window.setTimeout(() => {
+        isZoomStepScrollingRef.current = false
+      }, ZOOM_STEP_WHEEL_COOLDOWN_MS)
+    }
+
+    window.addEventListener('wheel', handleWheel, { passive: false })
+
+    return () => {
+      window.removeEventListener('wheel', handleWheel)
+      window.clearTimeout(scrollCooldownTimer)
+      isZoomStepScrollingRef.current = false
+      isReleaseStepScrollingRef.current = false
+    }
+  }, [prefersReducedMotion, scrollYProgress, updateWhyCarbonStep])
 
   useEffect(() => {
     const sectionElement = sectionRef.current
@@ -747,12 +1230,26 @@ function IntroSection({
           <span className="intro-section__visual-highlight" aria-hidden="true" />
 
           <img
-            className="intro-section__visual-image"
+            className="intro-section__visual-image intro-section__visual-image--primary"
             src="/leaf_three.png"
             alt=""
             loading="lazy"
           />
+          <img
+            className="intro-section__visual-image intro-section__visual-image--secondary"
+            src="/leafparticles.png"
+            alt=""
+            loading="lazy"
+          />
         </div>
+
+        {isWhyCarbonVisible ? (
+          <WhyCarbonOverlay
+            activeStepIndex={whyCarbonStepIndex}
+            slideDirection={whyCarbonSlideDirection}
+            prefersReducedMotion={Boolean(prefersReducedMotion)}
+          />
+        ) : null}
       </div>
     </motion.div>
   )

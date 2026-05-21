@@ -33,4 +33,7 @@ interface WhyCarbonOverlayProps {
   activeStepIndex: number
   slideDirection: number
   prefersReducedMotion: boolean
+  isTransitionEnter: boolean
 }
+
+type WhyCarbonIntroPhase = 'idle' | 'entered' | 'exiting' | 'complete'

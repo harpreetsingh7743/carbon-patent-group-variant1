@@ -331,11 +331,40 @@
   pointer-events: none;
 }
 
+.intro-section__why-carbon-intro {
+  position: absolute;
+  inset: 0;
+  z-index: 83;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  background: var(--color-hero-button-icon-text);
+}
+
+.intro-section__why-carbon-intro-title {
+  margin: 0;
+  padding-inline: 2rem;
+  font-family: var(--font-family-primary);
+  font-size: clamp(3rem, 9vw, 6.5rem);
+  font-weight: 700;
+  line-height: 0.98;
+  letter-spacing: -0.05em;
+  text-align: center;
+  color: var(--color-hero-green-circle);
+  text-shadow: 0 12px 36px var(--color-hero-green-circle-soft);
+  text-wrap: balance;
+  will-change: transform, opacity, filter;
+  backface-visibility: hidden;
+  transform: translateZ(0);
+}
+
 .intro-section__why-carbon-shell {
   width: 100%;
   height: 100%;
   display: flex;
   flex-direction: column;
+  will-change: transform, opacity;
 }
 
 .intro-section__why-carbon-header {
@@ -446,7 +475,6 @@
 
 .intro-section__why-carbon-description {
   margin: 0;
-  /* max-width: 34rem; */
   font-family: var(--font-family-primary);
   font-size: clamp(2.02rem, 2.4vw, 2.2rem);
   font-weight: 400;

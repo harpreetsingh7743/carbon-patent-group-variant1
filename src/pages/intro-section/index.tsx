@@ -9,6 +9,7 @@ import {
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 import './styles.css'
+import WhyCarbonIntroTitle from './why-carbon-intro-title'
 
 const PARTICLE_GRID_GAP = 25
 const PARTICLE_REPEL_RADIUS = 130
@@ -411,8 +412,23 @@ function clearVisualCardZoom(visualCardElement: HTMLElement) {
   visualCardElement.dataset.zoomActive = 'false'
 }
 
-function isInReleaseScrollPhase(overallProgress: number, zoomPhaseEndRatio: number) {
-  return overallProgress > zoomPhaseEndRatio && zoomPhaseEndRatio < 1
+function getWhyCarbonContentProgress(releaseProgress: number, introSlideEndRatio: number) {
+  if (introSlideEndRatio >= 1) {
+    return 0
+  }
+
+  if (releaseProgress <= introSlideEndRatio) {
+    return 0
+  }
+
+  return (releaseProgress - introSlideEndRatio) / (1 - introSlideEndRatio)
+}
+
+function getOverallProgressForReleaseProgress(
+  releaseProgress: number,
+  zoomPhaseEndRatio: number,
+) {
+  return zoomPhaseEndRatio + releaseProgress * (1 - zoomPhaseEndRatio)
 }
 
 function getReleaseStepIndexFromProgress(releaseProgress: number, stepCount: number) {
@@ -429,14 +445,16 @@ function getOverallProgressForReleaseStep(
   stepIndex: number,
   stepCount: number,
   zoomPhaseEndRatio: number,
+  introSlideEndRatio: number,
 ) {
   if (stepCount <= 1) {
-    return 1
+    return getOverallProgressForReleaseProgress(introSlideEndRatio, zoomPhaseEndRatio)
   }
 
-  const releaseProgress = stepIndex / (stepCount - 1)
+  const contentProgress = stepIndex / (stepCount - 1)
+  const releaseProgress = introSlideEndRatio + contentProgress * (1 - introSlideEndRatio)
 
-  return zoomPhaseEndRatio + releaseProgress * (1 - zoomPhaseEndRatio)
+  return getOverallProgressForReleaseProgress(releaseProgress, zoomPhaseEndRatio)
 }
 
 function createWhyCarbonTextTransition(
@@ -464,6 +482,7 @@ function WhyCarbonOverlay({
   activeStepIndex,
   slideDirection,
   prefersReducedMotion,
+  isTransitionEnter,
 }: WhyCarbonOverlayProps) {
   const activeStep = whyCarbonSteps[activeStepIndex]
 
@@ -483,7 +502,16 @@ function WhyCarbonOverlay({
 
   return (
     <div className="intro-section__why-carbon" aria-live="polite">
-      <div className="intro-section__why-carbon-shell">
+      <motion.div
+        className="intro-section__why-carbon-shell"
+        initial={isTransitionEnter && !prefersReducedMotion ? { opacity: 0, y: 40 } : false}
+        animate={{ opacity: 1, y: 0 }}
+        transition={
+          isTransitionEnter && !prefersReducedMotion
+            ? { duration: 0.6, ease: whyCarbonSlideEase, delay: 0.08 }
+            : { duration: 0 }
+        }
+      >
         <div className="intro-section__why-carbon-header">
           <div className="intro-section__why-carbon-icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -550,7 +578,7 @@ function WhyCarbonOverlay({
             </AnimatePresence>
           </div>
         </div>
-      </div>
+      </motion.div>
     </div>
   )
 }
@@ -689,12 +717,18 @@ function IntroSection({
   const isZoomStepScrollingRef = useRef(false)
   const whyCarbonStepIndexRef = useRef(0)
   const isReleaseStepScrollingRef = useRef(false)
-  const isWhyCarbonVisibleRef = useRef(false)
+  const introSlideEndRatioRef = useRef(0)
+  const isWhyCarbonIntroVisibleRef = useRef(false)
+  const isWhyCarbonOverlayVisibleRef = useRef(false)
+  const whyCarbonIntroPhaseRef = useRef<WhyCarbonIntroPhase>('idle')
   const particleCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const prefersReducedMotion = useReducedMotion()
   const [whyCarbonStepIndex, setWhyCarbonStepIndex] = useState(0)
   const [whyCarbonSlideDirection, setWhyCarbonSlideDirection] = useState(1)
-  const [isWhyCarbonVisible, setIsWhyCarbonVisible] = useState(false)
+  const [whyCarbonIntroPhase, setWhyCarbonIntroPhase] = useState<WhyCarbonIntroPhase>('idle')
+  const [introResetKey, setIntroResetKey] = useState(0)
+  const [isWhyCarbonIntroVisible, setIsWhyCarbonIntroVisible] = useState(false)
+  const [isWhyCarbonOverlayVisible, setIsWhyCarbonOverlayVisible] = useState(false)
   const contentParagraphs = paragraphs.length > 0 ? paragraphs : defaultParagraphs
 
   const updateWhyCarbonStep = useCallback((nextStepIndex: number) => {
@@ -712,6 +746,49 @@ function IntroSection({
     whyCarbonStepIndexRef.current = clampedStepIndex
     setWhyCarbonStepIndex(clampedStepIndex)
     setWhyCarbonSlideDirection(slideDirection)
+  }, [])
+
+  const handleIntroExitComplete = useCallback(() => {
+    if (whyCarbonIntroPhaseRef.current === 'complete') {
+      return
+    }
+
+    whyCarbonIntroPhaseRef.current = 'complete'
+    setWhyCarbonIntroPhase('complete')
+    isWhyCarbonIntroVisibleRef.current = false
+    setIsWhyCarbonIntroVisible(false)
+    isWhyCarbonOverlayVisibleRef.current = true
+    setIsWhyCarbonOverlayVisible(true)
+  }, [])
+
+  const triggerIntroExit = useCallback(() => {
+    if (whyCarbonIntroPhaseRef.current !== 'entered') {
+      return
+    }
+
+    whyCarbonIntroPhaseRef.current = 'exiting'
+    setWhyCarbonIntroPhase('exiting')
+    isWhyCarbonIntroVisibleRef.current = true
+    setIsWhyCarbonIntroVisible(true)
+    isWhyCarbonOverlayVisibleRef.current = true
+    setIsWhyCarbonOverlayVisible(true)
+
+    if (prefersReducedMotion) {
+      handleIntroExitComplete()
+    }
+  }, [handleIntroExitComplete, prefersReducedMotion])
+
+  const resetIntroToEntered = useCallback(() => {
+    whyCarbonIntroPhaseRef.current = 'entered'
+    setWhyCarbonIntroPhase('entered')
+    isWhyCarbonIntroVisibleRef.current = true
+    setIsWhyCarbonIntroVisible(true)
+    isWhyCarbonOverlayVisibleRef.current = false
+    setIsWhyCarbonOverlayVisible(false)
+    whyCarbonStepIndexRef.current = 0
+    setWhyCarbonStepIndex(0)
+    setWhyCarbonSlideDirection(1)
+    setIntroResetKey((currentKey) => currentKey + 1)
   }, [])
 
   const { scrollYProgress } = useScroll({
@@ -755,6 +832,8 @@ function IntroSection({
       )
       const zoomProgress = remapZoomProgress(linearZoomProgress)
       const releaseProgress = getPostZoomReleaseProgress(latestProgress, zoomPhaseEndRatio)
+      const introSlideEndRatio = introSlideEndRatioRef.current
+      const introPhase = whyCarbonIntroPhaseRef.current
       const activeZoomProgress = releaseProgress > 0 ? 1 : zoomProgress
 
       if (
@@ -769,23 +848,49 @@ function IntroSection({
         zoomStepIndexRef.current = linearZoomProgress > 0 ? ZOOM_STEP_TARGETS.length - 1 : 0
       }
 
-      const shouldShowWhyCarbon =
-        activeZoomProgress > 0 && latestProgress >= zoomPhaseEndRatio - 0.0001
+      const isInReleasePhase = latestProgress >= zoomPhaseEndRatio - 0.0001 && activeZoomProgress > 0
 
-      if (shouldShowWhyCarbon !== isWhyCarbonVisibleRef.current) {
-        isWhyCarbonVisibleRef.current = shouldShowWhyCarbon
-        setIsWhyCarbonVisible(shouldShowWhyCarbon)
+      if (isInReleasePhase && introPhase === 'idle') {
+        whyCarbonIntroPhaseRef.current = 'entered'
+        setWhyCarbonIntroPhase('entered')
+      }
+
+      if (!isInReleasePhase && introPhase !== 'idle') {
+        whyCarbonIntroPhaseRef.current = 'idle'
+        setWhyCarbonIntroPhase('idle')
+        isWhyCarbonIntroVisibleRef.current = false
+        setIsWhyCarbonIntroVisible(false)
+        isWhyCarbonOverlayVisibleRef.current = false
+        setIsWhyCarbonOverlayVisible(false)
+      }
+
+      const currentIntroPhase = whyCarbonIntroPhaseRef.current
+      const shouldShowIntro =
+        isInReleasePhase &&
+        (currentIntroPhase === 'entered' || currentIntroPhase === 'exiting')
+      const shouldShowOverlay =
+        currentIntroPhase === 'exiting' || (currentIntroPhase === 'complete' && isInReleasePhase)
+
+      if (shouldShowIntro !== isWhyCarbonIntroVisibleRef.current) {
+        isWhyCarbonIntroVisibleRef.current = shouldShowIntro
+        setIsWhyCarbonIntroVisible(shouldShowIntro)
+      }
+
+      if (shouldShowOverlay !== isWhyCarbonOverlayVisibleRef.current) {
+        isWhyCarbonOverlayVisibleRef.current = shouldShowOverlay
+        setIsWhyCarbonOverlayVisible(shouldShowOverlay)
       }
 
       if (
-        shouldShowWhyCarbon &&
-        !isReleaseStepScrollingRef.current &&
-        releaseProgress >= 0
+        shouldShowOverlay &&
+        currentIntroPhase === 'complete' &&
+        !isReleaseStepScrollingRef.current
       ) {
-        updateWhyCarbonStep(getReleaseStepIndexFromProgress(releaseProgress, whyCarbonSteps.length))
+        const contentProgress = getWhyCarbonContentProgress(releaseProgress, introSlideEndRatio)
+        updateWhyCarbonStep(getReleaseStepIndexFromProgress(contentProgress, whyCarbonSteps.length))
       }
 
-      if (!shouldShowWhyCarbon && whyCarbonStepIndexRef.current !== 0) {
+      if (!isInReleasePhase && whyCarbonStepIndexRef.current !== 0) {
         whyCarbonStepIndexRef.current = 0
         setWhyCarbonStepIndex(0)
         setWhyCarbonSlideDirection(1)
@@ -854,13 +959,16 @@ function IntroSection({
       const copyOverflow = Math.max(0, copyElement.scrollHeight - copyElement.clientHeight)
       const hasScrollableCopy = copyOverflow > 0
       const zoomScrollDistance = window.innerHeight * VISUAL_CARD_ZOOM_SCROLL_MULTIPLIER
-      const postZoomScrollDistance =
+      const contentScrollDistance =
         window.innerHeight *
         POST_ZOOM_SCROLL_MULTIPLIER *
         WHY_CARBON_STEP_SCROLL_MULTIPLIER *
         whyCarbonSteps.length
+      const postZoomScrollDistance = contentScrollDistance
       const animatedScrollDistance = copyOverflow + zoomScrollDistance + postZoomScrollDistance
       const hasZoomPhase = hasScrollableCopy
+
+      introSlideEndRatioRef.current = 0
 
       trackElement.style.height = hasScrollableCopy
         ? `${window.innerHeight + animatedScrollDistance}px`
@@ -965,10 +1073,64 @@ function IntroSection({
       const zoomPhaseEndRatio = zoomPhaseEndRatioRef.current
       const currentOverallProgress = scrollYProgress.get()
       const releaseProgress = getPostZoomReleaseProgress(currentOverallProgress, zoomPhaseEndRatio)
+      const introPhase = whyCarbonIntroPhaseRef.current
+      const direction = event.deltaY > 0 ? 1 : -1
 
-      if (isInReleaseScrollPhase(currentOverallProgress, zoomPhaseEndRatio)) {
-        const direction = event.deltaY > 0 ? 1 : -1
-        const nextStepIndex = whyCarbonStepIndexRef.current + direction
+      if (introPhase === 'exiting') {
+        event.preventDefault()
+        return
+      }
+
+      const isAtIntroHold =
+        introPhase === 'entered' &&
+        currentOverallProgress >= zoomPhaseEndRatio - 0.0001 &&
+        releaseProgress < 0.0001
+
+      if (isAtIntroHold) {
+        if (direction > 0) {
+          event.preventDefault()
+          triggerIntroExit()
+        }
+
+        return
+      }
+
+      const isInContentPhase =
+        introPhase === 'complete' &&
+        currentOverallProgress >= zoomPhaseEndRatio - 0.0001
+
+      if (isInContentPhase) {
+        const introSlideEndRatio = introSlideEndRatioRef.current
+        const contentProgress = getWhyCarbonContentProgress(releaseProgress, introSlideEndRatio)
+        const currentStepIndex = getReleaseStepIndexFromProgress(
+          contentProgress,
+          whyCarbonSteps.length,
+        )
+        const nextStepIndex = currentStepIndex + direction
+
+        if (direction < 0 && nextStepIndex < 0) {
+          event.preventDefault()
+
+          resetIntroToEntered()
+
+          const targetOverallProgress = zoomPhaseEndRatio
+          const targetScrollY = getTargetScrollYForOverallProgress(
+            trackElement,
+            window.scrollY,
+            currentOverallProgress,
+            targetOverallProgress,
+          )
+
+          isReleaseStepScrollingRef.current = true
+          window.scrollTo({ top: targetScrollY, behavior: 'smooth' })
+
+          window.clearTimeout(scrollCooldownTimer)
+          scrollCooldownTimer = window.setTimeout(() => {
+            isReleaseStepScrollingRef.current = false
+          }, ZOOM_STEP_WHEEL_COOLDOWN_MS)
+
+          return
+        }
 
         if (nextStepIndex < 0 || nextStepIndex >= whyCarbonSteps.length) {
           return
@@ -980,6 +1142,7 @@ function IntroSection({
           nextStepIndex,
           whyCarbonSteps.length,
           zoomPhaseEndRatio,
+          introSlideEndRatio,
         )
         const targetScrollY = getTargetScrollYForOverallProgress(
           trackElement,
@@ -1007,7 +1170,6 @@ function IntroSection({
         return
       }
 
-      const direction = event.deltaY > 0 ? 1 : -1
       const nextStepIndex = zoomStepIndexRef.current + direction
 
       if (nextStepIndex < 0 || nextStepIndex >= ZOOM_STEP_TARGETS.length) {
@@ -1047,7 +1209,7 @@ function IntroSection({
       isZoomStepScrollingRef.current = false
       isReleaseStepScrollingRef.current = false
     }
-  }, [prefersReducedMotion, scrollYProgress, updateWhyCarbonStep])
+  }, [prefersReducedMotion, resetIntroToEntered, scrollYProgress, triggerIntroExit, updateWhyCarbonStep])
 
   useEffect(() => {
     const sectionElement = sectionRef.current
@@ -1289,11 +1451,21 @@ function IntroSection({
           />
         </div>
 
-        {isWhyCarbonVisible ? (
+        {isWhyCarbonIntroVisible ? (
+          <WhyCarbonIntroTitle
+            key={introResetKey}
+            phase={whyCarbonIntroPhase === 'exiting' ? 'exiting' : 'entered'}
+            prefersReducedMotion={Boolean(prefersReducedMotion)}
+            onExitComplete={handleIntroExitComplete}
+          />
+        ) : null}
+
+        {isWhyCarbonOverlayVisible ? (
           <WhyCarbonOverlay
             activeStepIndex={whyCarbonStepIndex}
             slideDirection={whyCarbonSlideDirection}
             prefersReducedMotion={Boolean(prefersReducedMotion)}
+            isTransitionEnter={whyCarbonIntroPhase === 'exiting'}
           />
         ) : null}
       </div>

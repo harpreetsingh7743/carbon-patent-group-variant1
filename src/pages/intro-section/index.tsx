@@ -107,8 +107,6 @@ const ZOOM_PROGRESS_SEGMENTS: readonly { inputEnd: number; outputEnd: number }[]
   { inputEnd: 1, outputEnd: 1 },
 ]
 
-const ZOOM_STEP_TARGETS = [0, 0.2, 0.7, 1] as const
-
 const VISUAL_CARD_CLIP_START: readonly [number, number][] = [
   [0, 0],
   [100, 0],
@@ -235,38 +233,6 @@ function remapZoomProgress(linearProgress: number) {
   return 1
 }
 
-function inverseRemapZoomProgress(remappedProgress: number) {
-  const clampedProgress = Math.min(1, Math.max(0, remappedProgress))
-  let previousInputEnd = 0
-  let previousOutputEnd = 0
-
-  for (const segment of ZOOM_PROGRESS_SEGMENTS) {
-    if (clampedProgress <= segment.outputEnd) {
-      const outputSpan = segment.outputEnd - previousOutputEnd
-      const inputSpan = segment.inputEnd - previousInputEnd
-      const segmentProgress =
-        outputSpan > 0 ? (clampedProgress - previousOutputEnd) / outputSpan : 0
-
-      return previousInputEnd + segmentProgress * inputSpan
-    }
-
-    previousInputEnd = segment.inputEnd
-    previousOutputEnd = segment.outputEnd
-  }
-
-  return 1
-}
-
-function getOverallProgressForRemappedZoom(
-  remappedProgress: number,
-  copyPhaseEndRatio: number,
-  zoomPhaseEndRatio: number,
-) {
-  const linearZoomProgress = inverseRemapZoomProgress(remappedProgress)
-
-  return copyPhaseEndRatio + linearZoomProgress * (zoomPhaseEndRatio - copyPhaseEndRatio)
-}
-
 function getTargetScrollYForOverallProgress(
   trackElement: HTMLElement,
   currentScrollY: number,
@@ -277,30 +243,6 @@ function getTargetScrollYForOverallProgress(
   const trackStartScrollY = currentScrollY - currentOverallProgress * maxScroll
 
   return trackStartScrollY + targetOverallProgress * maxScroll
-}
-
-function getNearestZoomStepIndex(remappedProgress: number) {
-  let nearestIndex = 0
-  let nearestDistance = Infinity
-
-  ZOOM_STEP_TARGETS.forEach((target, index) => {
-    const distance = Math.abs(target - remappedProgress)
-
-    if (distance < nearestDistance) {
-      nearestDistance = distance
-      nearestIndex = index
-    }
-  })
-
-  return nearestIndex
-}
-
-function isInZoomScrollPhase(
-  overallProgress: number,
-  copyPhaseEndRatio: number,
-  zoomPhaseEndRatio: number,
-) {
-  return overallProgress >= copyPhaseEndRatio && overallProgress <= zoomPhaseEndRatio
 }
 
 function getPostZoomReleaseProgress(overallProgress: number, zoomPhaseEndRatio: number) {
@@ -713,8 +655,6 @@ function IntroSection({
   const copyPhaseEndRatioRef = useRef(1)
   const zoomPhaseEndRatioRef = useRef(1)
   const zoomFromRectRef = useRef<IntroVisualCardRect | null>(null)
-  const zoomStepIndexRef = useRef(0)
-  const isZoomStepScrollingRef = useRef(false)
   const whyCarbonStepIndexRef = useRef(0)
   const isReleaseStepScrollingRef = useRef(false)
   const introSlideEndRatioRef = useRef(0)
@@ -835,18 +775,6 @@ function IntroSection({
       const introSlideEndRatio = introSlideEndRatioRef.current
       const introPhase = whyCarbonIntroPhaseRef.current
       const activeZoomProgress = releaseProgress > 0 ? 1 : zoomProgress
-
-      if (
-        !isZoomStepScrollingRef.current &&
-        isInZoomScrollPhase(latestProgress, copyPhaseEndRatio, zoomPhaseEndRatio) &&
-        releaseProgress === 0
-      ) {
-        zoomStepIndexRef.current = getNearestZoomStepIndex(zoomProgress)
-      }
-
-      if (releaseProgress === 0 && !isInZoomScrollPhase(latestProgress, copyPhaseEndRatio, zoomPhaseEndRatio)) {
-        zoomStepIndexRef.current = linearZoomProgress > 0 ? ZOOM_STEP_TARGETS.length - 1 : 0
-      }
 
       const isInReleasePhase = latestProgress >= zoomPhaseEndRatio - 0.0001 && activeZoomProgress > 0
 
@@ -1063,13 +991,11 @@ function IntroSection({
       if (
         !trackElement ||
         !isScrollGatedRef.current ||
-        isZoomStepScrollingRef.current ||
         isReleaseStepScrollingRef.current
       ) {
         return
       }
 
-      const copyPhaseEndRatio = copyPhaseEndRatioRef.current
       const zoomPhaseEndRatio = zoomPhaseEndRatioRef.current
       const currentOverallProgress = scrollYProgress.get()
       const releaseProgress = getPostZoomReleaseProgress(currentOverallProgress, zoomPhaseEndRatio)
@@ -1162,43 +1088,6 @@ function IntroSection({
 
         return
       }
-
-      if (
-        !isInZoomScrollPhase(currentOverallProgress, copyPhaseEndRatio, zoomPhaseEndRatio) ||
-        releaseProgress > 0
-      ) {
-        return
-      }
-
-      const nextStepIndex = zoomStepIndexRef.current + direction
-
-      if (nextStepIndex < 0 || nextStepIndex >= ZOOM_STEP_TARGETS.length) {
-        return
-      }
-
-      event.preventDefault()
-
-      const targetRemappedProgress = ZOOM_STEP_TARGETS[nextStepIndex]
-      const targetOverallProgress = getOverallProgressForRemappedZoom(
-        targetRemappedProgress,
-        copyPhaseEndRatio,
-        zoomPhaseEndRatio,
-      )
-      const targetScrollY = getTargetScrollYForOverallProgress(
-        trackElement,
-        window.scrollY,
-        currentOverallProgress,
-        targetOverallProgress,
-      )
-
-      zoomStepIndexRef.current = nextStepIndex
-      isZoomStepScrollingRef.current = true
-      window.scrollTo({ top: targetScrollY, behavior: 'smooth' })
-
-      window.clearTimeout(scrollCooldownTimer)
-      scrollCooldownTimer = window.setTimeout(() => {
-        isZoomStepScrollingRef.current = false
-      }, ZOOM_STEP_WHEEL_COOLDOWN_MS)
     }
 
     window.addEventListener('wheel', handleWheel, { passive: false })
@@ -1206,7 +1095,6 @@ function IntroSection({
     return () => {
       window.removeEventListener('wheel', handleWheel)
       window.clearTimeout(scrollCooldownTimer)
-      isZoomStepScrollingRef.current = false
       isReleaseStepScrollingRef.current = false
     }
   }, [prefersReducedMotion, resetIntroToEntered, scrollYProgress, triggerIntroExit, updateWhyCarbonStep])

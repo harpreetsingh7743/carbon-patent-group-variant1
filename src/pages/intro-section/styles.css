@@ -339,7 +339,6 @@
   align-items: center;
   justify-content: center;
   pointer-events: none;
-  background: var(--color-hero-button-icon-text);
 }
 
 .intro-section__why-carbon-intro-title {

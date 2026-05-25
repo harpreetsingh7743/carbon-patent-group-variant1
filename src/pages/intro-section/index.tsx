@@ -23,6 +23,9 @@ const VISUAL_CARD_ZOOM_SCROLL_MULTIPLIER = 3
 const POST_ZOOM_SCROLL_MULTIPLIER = 1
 const WHY_CARBON_STEP_SCROLL_MULTIPLIER = 1
 const ZOOM_STEP_WHEEL_COOLDOWN_MS = 700
+const RELEASE_PHASE_ENTER_EPSILON = 0.0001
+const RELEASE_PHASE_EXIT_EPSILON = 0.012
+const INTRO_EXIT_FALLBACK_MS = 900
 
 const whyCarbonSteps: WhyCarbonStep[] = [
   {
@@ -661,6 +664,7 @@ function IntroSection({
   const isWhyCarbonIntroVisibleRef = useRef(false)
   const isWhyCarbonOverlayVisibleRef = useRef(false)
   const whyCarbonIntroPhaseRef = useRef<WhyCarbonIntroPhase>('idle')
+  const introExitFallbackTimerRef = useRef<number | null>(null)
   const particleCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const prefersReducedMotion = useReducedMotion()
   const [whyCarbonStepIndex, setWhyCarbonStepIndex] = useState(0)
@@ -688,7 +692,16 @@ function IntroSection({
     setWhyCarbonSlideDirection(slideDirection)
   }, [])
 
+  const clearIntroExitFallbackTimer = useCallback(() => {
+    if (introExitFallbackTimerRef.current !== null) {
+      window.clearTimeout(introExitFallbackTimerRef.current)
+      introExitFallbackTimerRef.current = null
+    }
+  }, [])
+
   const handleIntroExitComplete = useCallback(() => {
+    clearIntroExitFallbackTimer()
+
     if (whyCarbonIntroPhaseRef.current === 'complete') {
       return
     }
@@ -699,7 +712,7 @@ function IntroSection({
     setIsWhyCarbonIntroVisible(false)
     isWhyCarbonOverlayVisibleRef.current = true
     setIsWhyCarbonOverlayVisible(true)
-  }, [])
+  }, [clearIntroExitFallbackTimer])
 
   const triggerIntroExit = useCallback(() => {
     if (whyCarbonIntroPhaseRef.current !== 'entered') {
@@ -715,10 +728,20 @@ function IntroSection({
 
     if (prefersReducedMotion) {
       handleIntroExitComplete()
+      return
     }
-  }, [handleIntroExitComplete, prefersReducedMotion])
+
+    clearIntroExitFallbackTimer()
+    introExitFallbackTimerRef.current = window.setTimeout(() => {
+      introExitFallbackTimerRef.current = null
+      if (whyCarbonIntroPhaseRef.current === 'exiting') {
+        handleIntroExitComplete()
+      }
+    }, INTRO_EXIT_FALLBACK_MS)
+  }, [clearIntroExitFallbackTimer, handleIntroExitComplete, prefersReducedMotion])
 
   const resetIntroToEntered = useCallback(() => {
+    clearIntroExitFallbackTimer()
     whyCarbonIntroPhaseRef.current = 'entered'
     setWhyCarbonIntroPhase('entered')
     isWhyCarbonIntroVisibleRef.current = true
@@ -729,7 +752,7 @@ function IntroSection({
     setWhyCarbonStepIndex(0)
     setWhyCarbonSlideDirection(1)
     setIntroResetKey((currentKey) => currentKey + 1)
-  }, [])
+  }, [clearIntroExitFallbackTimer])
 
   const { scrollYProgress } = useScroll({
     target: trackRef,
@@ -776,14 +799,19 @@ function IntroSection({
       const introPhase = whyCarbonIntroPhaseRef.current
       const activeZoomProgress = releaseProgress > 0 ? 1 : zoomProgress
 
-      const isInReleasePhase = latestProgress >= zoomPhaseEndRatio - 0.0001 && activeZoomProgress > 0
+      const isAtReleaseBoundary =
+        latestProgress >= zoomPhaseEndRatio - RELEASE_PHASE_ENTER_EPSILON &&
+        activeZoomProgress > 0
+      const hasLeftReleasePhase =
+        latestProgress < zoomPhaseEndRatio - RELEASE_PHASE_EXIT_EPSILON
 
-      if (isInReleasePhase && introPhase === 'idle') {
+      if (isAtReleaseBoundary && introPhase === 'idle') {
         whyCarbonIntroPhaseRef.current = 'entered'
         setWhyCarbonIntroPhase('entered')
       }
 
-      if (!isInReleasePhase && introPhase !== 'idle') {
+      if (hasLeftReleasePhase && introPhase !== 'idle') {
+        clearIntroExitFallbackTimer()
         whyCarbonIntroPhaseRef.current = 'idle'
         setWhyCarbonIntroPhase('idle')
         isWhyCarbonIntroVisibleRef.current = false
@@ -794,10 +822,9 @@ function IntroSection({
 
       const currentIntroPhase = whyCarbonIntroPhaseRef.current
       const shouldShowIntro =
-        isInReleasePhase &&
-        (currentIntroPhase === 'entered' || currentIntroPhase === 'exiting')
+        currentIntroPhase === 'entered' || currentIntroPhase === 'exiting'
       const shouldShowOverlay =
-        currentIntroPhase === 'exiting' || (currentIntroPhase === 'complete' && isInReleasePhase)
+        currentIntroPhase === 'exiting' || currentIntroPhase === 'complete'
 
       if (shouldShowIntro !== isWhyCarbonIntroVisibleRef.current) {
         isWhyCarbonIntroVisibleRef.current = shouldShowIntro
@@ -818,7 +845,7 @@ function IntroSection({
         updateWhyCarbonStep(getReleaseStepIndexFromProgress(contentProgress, whyCarbonSteps.length))
       }
 
-      if (!isInReleasePhase && whyCarbonStepIndexRef.current !== 0) {
+      if (hasLeftReleasePhase && whyCarbonStepIndexRef.current !== 0) {
         whyCarbonStepIndexRef.current = 0
         setWhyCarbonStepIndex(0)
         setWhyCarbonSlideDirection(1)
@@ -872,8 +899,14 @@ function IntroSection({
         visualCardElement.style.clipPath = getVisualCardClipPath(copyScrollProgress)
       }
     },
-    [prefersReducedMotion, updateWhyCarbonStep],
+    [clearIntroExitFallbackTimer, prefersReducedMotion, updateWhyCarbonStep],
   )
+
+  useEffect(() => {
+    return () => {
+      clearIntroExitFallbackTimer()
+    }
+  }, [clearIntroExitFallbackTimer])
 
   useLayoutEffect(() => {
     const trackElement = trackRef.current
@@ -1009,8 +1042,7 @@ function IntroSection({
 
       const isAtIntroHold =
         introPhase === 'entered' &&
-        currentOverallProgress >= zoomPhaseEndRatio - 0.0001 &&
-        releaseProgress < 0.0001
+        Math.ceil(currentOverallProgress * 1000) + 200 > Math.ceil(zoomPhaseEndRatio * 1000)
 
       if (isAtIntroHold) {
         if (direction > 0) {
@@ -1246,7 +1278,11 @@ function IntroSection({
   }, [])
 
   return (
-    <motion.div ref={trackRef} className="intro-section__track">
+    <motion.div
+      ref={trackRef}
+      className="intro-section__track"
+      style={{ position: 'relative' }}
+    >
       <motion.section
         ref={sectionRef}
         className="intro-section"

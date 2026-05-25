@@ -38,17 +38,17 @@ function WhyCarbonIntroTitle({
         animate={
           isExiting
             ? {
-                opacity: 0,
-                y: -72,
-                scale: 0.968,
-                filter: 'blur(4px)',
-              }
+              opacity: 0,
+              y: -72,
+              scale: 0.968,
+              filter: 'blur(4px)',
+            }
             : {
-                opacity: 1,
-                y: 0,
-                scale: 1,
-                filter: 'blur(0px)',
-              }
+              opacity: 1,
+              y: 0,
+              scale: 1,
+              filter: 'blur(0px)',
+            }
         }
         transition={
           isExiting

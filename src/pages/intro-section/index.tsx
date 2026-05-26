@@ -8,6 +8,7 @@ import {
 } from 'framer-motion'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 
+import AnimatedWordsText from '../../components/animated-words-text'
 import './styles.css'
 import WhyCarbonIntroTitle from './why-carbon-intro-title'
 
@@ -1342,9 +1343,13 @@ function IntroSection({
                 data-prefers-reduced-motion={prefersReducedMotion ? 'true' : 'false'}
               >
                 {contentParagraphs.map((paragraph, paragraphIndex) => (
-                  <p key={`${paragraphIndex}-${paragraph.slice(0, 18)}`} className="intro-section__paragraph">
-                    {paragraph}
-                  </p>
+                  <AnimatedWordsText
+                    key={`${paragraphIndex}-${paragraph.slice(0, 18)}`}
+                    text={paragraph}
+                    className="intro-section__paragraph"
+                    scrollRootRef={copyRef}
+                    prefersReducedMotion={Boolean(prefersReducedMotion)}
+                  />
                 ))}
               </motion.div>
             </motion.div>

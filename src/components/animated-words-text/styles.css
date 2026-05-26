@@ -1,0 +1,15 @@
+.animated-words-text__word-mask {
+  display: inline-block;
+  overflow: hidden;
+  vertical-align: top;
+  line-height: inherit;
+}
+
+.animated-words-text__word {
+  display: inline-block;
+  will-change: transform;
+  font-size: 1.25rem;
+  font-weight: 400;
+  letter-spacing: -0.03em;
+  text-decoration: none;
+}

@@ -200,6 +200,41 @@ function getCopyScrollProgress(overallProgress: number, copyPhaseEndRatio: numbe
   return Math.min(1, overallProgress / copyPhaseEndRatio)
 }
 
+const COPY_PARAGRAPH_REVEAL_VIEWPORT_RATIO = 0.55
+
+function getRevealedParagraphIndex(
+  copyElement: HTMLDivElement,
+  paragraphElements: readonly (HTMLParagraphElement | null)[],
+  copyScrollProgress: number,
+) {
+  const paragraphCount = paragraphElements.filter(Boolean).length
+
+  if (paragraphCount === 0) {
+    return -1
+  }
+
+  if (copyElement.dataset.scrollGated === 'true') {
+    const revealLine =
+      copyElement.scrollTop +
+      copyElement.clientHeight * COPY_PARAGRAPH_REVEAL_VIEWPORT_RATIO
+    let nextIndex = -1
+
+    paragraphElements.forEach((element, index) => {
+      if (element && element.offsetTop <= revealLine) {
+        nextIndex = index
+      }
+    })
+
+    return nextIndex
+  }
+
+  if (copyScrollProgress <= 0) {
+    return 0
+  }
+
+  return Math.min(paragraphCount - 1, Math.floor(copyScrollProgress * paragraphCount))
+}
+
 function getVisualCardZoomProgress(
   overallProgress: number,
   copyPhaseEndRatio: number,
@@ -635,14 +670,6 @@ const defaultParagraphs = [
   `Duis cupidatat duis eiusmod exercitation nisi esse enim enim. Labore velit commodo mollit laborum excepteur reprehenderit esse sit. Ea labore consequat culpa nostrud et ea enim dolor exercitation elit occaecat ipsum. Fugiat non magna mollit sunt irure laborum enim ullamco velit. Sunt mollit do proident deserunt sit. Mollit excepteur laborum in velit reprehenderit id dolore commodo voluptate. Sunt consectetur aliquip in occaecat.`,
 
   `Id tempor excepteur laboris enim exercitation id in dolore deserunt consectetur. Ullamco aliquip duis et magna ea irure pariatur consectetur nisi. Elit aliquip aliquip officia sit duis duis dolor elit eiusmod pariatur. Sunt amet ipsum occaecat anim aliqua laboris veniam labore culpa consectetur duis irure Lorem ut. Eu enim laborum excepteur excepteur proident dolor veniam incididunt culpa in Lorem. Duis aliquip quis sit sit laboris labore labore id duis nulla.`,
-
-  `Fugiat in reprehenderit mollit sit. Velit nostrud in non voluptate ullamco cupidatat. Adipisicing fugiat laborum fugiat fugiat elit commodo reprehenderit tempor ea. Magna est non ea cupidatat. Irure ut tempor cupidatat veniam occaecat et minim do.`,
-
-  `Et qui irure voluptate sit aliquip aliqua voluptate labore culpa est labore ea. Commodo sunt officia duis eiusmod proident ad mollit qui labore sit. Non eu non ullamco ullamco ad qui laborum dolor do ex dolor velit eiusmod. Tempor in dolor ea nulla cillum nisi nulla labore esse veniam in. Nulla velit voluptate excepteur culpa laborum aute nisi. Sunt fugiat elit qui incididunt.`,
-
-  `Sit labore sint ipsum et aliqua nisi ea culpa aliqua duis labore. Consectetur eu reprehenderit cillum ea ipsum aliqua reprehenderit aliqua ex. Id laboris esse velit consequat exercitation amet excepteur tempor. Ea reprehenderit elit anim fugiat occaecat officia pariatur pariatur mollit duis ullamco eiusmod. Ullamco ipsum duis ad est sit deserunt duis mollit velit mollit pariatur. Exercitation elit esse velit cupidatat excepteur. Id eu magna officia velit.`,
-
-  `Velit anim dolor sint et ea. Eu in laborum eu occaecat. Laborum in ullamco voluptate consectetur ut commodo ad voluptate cupidatat Lorem eu et duis labore. Anim consequat reprehenderit sit aliquip minim. Cillum incididunt veniam eu irure aute anim cillum ad. Veniam nisi do duis ad nisi proident minim. Cillum non ut pariatur aliquip cillum dolor.`
 ]
 
 function IntroSection({
@@ -653,6 +680,8 @@ function IntroSection({
   const trackRef = useRef<HTMLDivElement | null>(null)
   const sectionRef = useRef<HTMLElement | null>(null)
   const copyRef = useRef<HTMLDivElement | null>(null)
+  const paragraphRefs = useRef<(HTMLParagraphElement | null)[]>([])
+  const revealedParagraphIndexRef = useRef(-1)
   const visualCardRef = useRef<HTMLDivElement | null>(null)
   const visualCardFloaterRef = useRef<HTMLDivElement | null>(null)
   const isScrollGatedRef = useRef(false)
@@ -674,7 +703,29 @@ function IntroSection({
   const [introResetKey, setIntroResetKey] = useState(0)
   const [isWhyCarbonIntroVisible, setIsWhyCarbonIntroVisible] = useState(false)
   const [isWhyCarbonOverlayVisible, setIsWhyCarbonOverlayVisible] = useState(false)
+  const [revealedParagraphIndex, setRevealedParagraphIndex] = useState(-1)
   const contentParagraphs = paragraphs.length > 0 ? paragraphs : defaultParagraphs
+
+  const updateRevealedParagraphIndex = useCallback((copyScrollProgress: number) => {
+    const copyElement = copyRef.current
+
+    if (!copyElement) {
+      return
+    }
+
+    const nextIndex = getRevealedParagraphIndex(
+      copyElement,
+      paragraphRefs.current,
+      copyScrollProgress,
+    )
+
+    if (nextIndex <= revealedParagraphIndexRef.current) {
+      return
+    }
+
+    revealedParagraphIndexRef.current = nextIndex
+    setRevealedParagraphIndex(nextIndex)
+  }, [])
 
   const updateWhyCarbonStep = useCallback((nextStepIndex: number) => {
     const clampedStepIndex = Math.min(
@@ -860,6 +911,8 @@ function IntroSection({
         }
       }
 
+      updateRevealedParagraphIndex(copyScrollProgress)
+
       if (!visualCardElement || !visualCardFloaterElement) {
         return
       }
@@ -900,7 +953,7 @@ function IntroSection({
         visualCardElement.style.clipPath = getVisualCardClipPath(copyScrollProgress)
       }
     },
-    [clearIntroExitFallbackTimer, prefersReducedMotion, updateWhyCarbonStep],
+    [clearIntroExitFallbackTimer, prefersReducedMotion, updateRevealedParagraphIndex, updateWhyCarbonStep],
   )
 
   useEffect(() => {
@@ -969,6 +1022,16 @@ function IntroSection({
       window.removeEventListener('resize', handleResize)
     }
   }, [contentParagraphs.length, prefersReducedMotion, scrollYProgress, syncIntroScrollState])
+
+  useEffect(() => {
+    paragraphRefs.current.length = contentParagraphs.length
+  }, [contentParagraphs.length])
+
+  useEffect(() => {
+    revealedParagraphIndexRef.current = -1
+    setRevealedParagraphIndex(-1)
+    syncIntroScrollState(scrollYProgress.get())
+  }, [introResetKey, scrollYProgress, syncIntroScrollState])
 
   useEffect(() => {
     const trackElement = trackRef.current
@@ -1345,9 +1408,12 @@ function IntroSection({
                 {contentParagraphs.map((paragraph, paragraphIndex) => (
                   <AnimatedWordsText
                     key={`${paragraphIndex}-${paragraph.slice(0, 18)}`}
+                    ref={(element) => {
+                      paragraphRefs.current[paragraphIndex] = element
+                    }}
                     text={paragraph}
                     className="intro-section__paragraph"
-                    scrollRootRef={copyRef}
+                    shouldAnimate={paragraphIndex <= revealedParagraphIndex}
                     prefersReducedMotion={Boolean(prefersReducedMotion)}
                   />
                 ))}

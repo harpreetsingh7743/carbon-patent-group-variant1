@@ -1,5 +1,5 @@
-import { motion, useInView } from 'framer-motion'
-import { Fragment, useRef } from 'react'
+import { motion } from 'framer-motion'
+import { forwardRef, Fragment } from 'react'
 
 import type { AnimatedWordsTextProps } from './types'
 import './styles.css'
@@ -33,49 +33,47 @@ function splitTextIntoWords(text: string) {
   return text.split(/\s+/).filter(Boolean)
 }
 
-function AnimatedWordsText({
-  text,
-  className = '',
-  scrollRootRef,
-  prefersReducedMotion = false,
-}: AnimatedWordsTextProps) {
-  const paragraphRef = useRef<HTMLParagraphElement>(null)
-  const isParagraphInView = useInView(paragraphRef, {
-    root: scrollRootRef,
-    amount: 0.2,
-    once: true,
-  })
-  const words = splitTextIntoWords(text)
+const AnimatedWordsText = forwardRef<HTMLParagraphElement, AnimatedWordsTextProps>(
+  function AnimatedWordsText(
+    { text, className = '', prefersReducedMotion = false, shouldAnimate = false },
+    ref,
+  ) {
+    const words = splitTextIntoWords(text)
 
-  if (prefersReducedMotion) {
-    return <p className={className}>{text}</p>
-  }
+    if (prefersReducedMotion) {
+      return (
+        <p ref={ref} className={className}>
+          {text}
+        </p>
+      )
+    }
 
-  return (
-    <motion.p
-      ref={paragraphRef}
-      className={className}
-      data-animate="words"
-      data-animated={isParagraphInView ? '' : undefined}
-      initial="hidden"
-      animate={isParagraphInView ? 'visible' : 'hidden'}
-      variants={animatedWordsContainerVariants}
-    >
-      {words.map((word, wordIndex) => (
-        <Fragment key={`${wordIndex}-${word}`}>
-          {wordIndex > 0 ? ' ' : null}
-          <span className="animated-words-text__word-mask" aria-hidden={false}>
-            <motion.span
-              className="animated-words-text__word"
-              variants={animatedWordVariants}
-            >
-              {word}
-            </motion.span>
-          </span>
-        </Fragment>
-      ))}
-    </motion.p>
-  )
-}
+    return (
+      <motion.p
+        ref={ref}
+        className={className}
+        data-animate="words"
+        data-animated={shouldAnimate ? '' : undefined}
+        initial="hidden"
+        animate={shouldAnimate ? 'visible' : 'hidden'}
+        variants={animatedWordsContainerVariants}
+      >
+        {words.map((word, wordIndex) => (
+          <Fragment key={`${wordIndex}-${word}`}>
+            {wordIndex > 0 ? ' ' : null}
+            <span className="animated-words-text__word-mask" aria-hidden={false}>
+              <motion.span
+                className="animated-words-text__word"
+                variants={animatedWordVariants}
+              >
+                {word}
+              </motion.span>
+            </span>
+          </Fragment>
+        ))}
+      </motion.p>
+    )
+  },
+)
 
 export default AnimatedWordsText

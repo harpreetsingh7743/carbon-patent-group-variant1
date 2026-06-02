@@ -104,6 +104,10 @@
   z-index: 80;
 }
 
+.intro-section__visual-card--floater[data-exit-scroll-active="true"] {
+  will-change: transform;
+}
+
 .intro-section__visual-card--floater .intro-section__visual-highlight,
 .intro-section__visual-card--floater .intro-section__visual-image {
   flex-shrink: 0;

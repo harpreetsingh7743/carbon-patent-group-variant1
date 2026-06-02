@@ -22,7 +22,7 @@ const PARTICLE_IDLE_VELOCITY_THRESHOLD = 0.02
 const PARTICLE_IDLE_OFFSET_THRESHOLD = 0.02
 const VISUAL_CARD_ZOOM_SCROLL_MULTIPLIER = 3
 const POST_ZOOM_SCROLL_MULTIPLIER = 1
-const WHY_CARBON_STEP_SCROLL_MULTIPLIER = 1
+const WHY_CARBON_STEP_SCROLL_MULTIPLIER = 2
 const ZOOM_STEP_WHEEL_COOLDOWN_MS = 700
 const RELEASE_PHASE_ENTER_EPSILON = 0.0001
 const RELEASE_PHASE_EXIT_EPSILON = 0.012
@@ -292,6 +292,49 @@ function getPostZoomReleaseProgress(overallProgress: number, zoomPhaseEndRatio: 
   return Math.min(1, (overallProgress - zoomPhaseEndRatio) / (1 - zoomPhaseEndRatio))
 }
 
+function getFloaterExitScrollOffset(trackElement: HTMLElement) {
+  const trackBottom = trackElement.getBoundingClientRect().bottom
+  return Math.max(0, window.innerHeight - trackBottom)
+}
+
+function applyFloaterExitScroll(visualCardElement: HTMLElement, exitScrollOffset: number) {
+  if (exitScrollOffset <= 0) {
+    clearFloaterExitScroll(visualCardElement)
+    return
+  }
+
+  if (visualCardElement.dataset.releasePinned === 'true') {
+    unpinReleaseLeavesForExitScroll(visualCardElement)
+  }
+
+  visualCardElement.style.transform = `translate3d(0, ${-exitScrollOffset}px, 0)`
+  visualCardElement.dataset.exitScrollActive = 'true'
+}
+
+function clearFloaterExitScroll(visualCardElement: HTMLElement) {
+  visualCardElement.style.removeProperty('transform')
+  visualCardElement.dataset.exitScrollActive = 'false'
+  visualCardElement.dataset.exitScrollLeavesUnpinned = 'false'
+}
+
+function unpinReleaseLeavesForExitScroll(visualCardElement: HTMLElement) {
+  if (visualCardElement.dataset.exitScrollLeavesUnpinned === 'true') {
+    return
+  }
+
+  visualCardElement.dataset.releasePinned = 'false'
+  visualCardElement.dataset.exitScrollLeavesUnpinned = 'true'
+
+  getLeafImageElements(visualCardElement).forEach((leafImageElement) => {
+    leafImageElement.style.removeProperty('position')
+    leafImageElement.style.removeProperty('left')
+    leafImageElement.style.removeProperty('top')
+    leafImageElement.style.removeProperty('width')
+    leafImageElement.style.removeProperty('transform')
+    leafImageElement.style.removeProperty('z-index')
+  })
+}
+
 function getLeafImageElements(visualCardElement: HTMLElement) {
   return Array.from(
     visualCardElement.querySelectorAll<HTMLElement>(
@@ -304,7 +347,11 @@ function pinReleaseLeafToViewport(
   visualCardElement: HTMLElement,
   leafImageElements: HTMLElement[],
 ) {
-  if (!leafImageElements.length || visualCardElement.dataset.releasePinned === 'true') {
+  if (
+    !leafImageElements.length ||
+    visualCardElement.dataset.releasePinned === 'true' ||
+    visualCardElement.dataset.exitScrollActive === 'true'
+  ) {
     return
   }
 
@@ -377,6 +424,7 @@ function applyVisualCardZoom(
 }
 
 function clearVisualCardZoom(visualCardElement: HTMLElement) {
+  clearFloaterExitScroll(visualCardElement)
   visualCardElement.style.removeProperty('position')
   visualCardElement.style.removeProperty('top')
   visualCardElement.style.removeProperty('left')
@@ -417,9 +465,31 @@ function getReleaseStepIndexFromProgress(releaseProgress: number, stepCount: num
     return 0
   }
 
-  const index = Math.round(releaseProgress * (stepCount - 1))
+  const clampedProgress = Math.min(1, Math.max(0, releaseProgress))
 
-  return Math.min(stepCount - 1, Math.max(0, index))
+  if (clampedProgress >= 1) {
+    return stepCount - 1
+  }
+
+  return Math.min(stepCount - 1, Math.floor(clampedProgress * stepCount))
+}
+
+function clampReleaseStepChange(
+  currentStepIndex: number,
+  targetStepIndex: number,
+  stepCount: number,
+) {
+  const clampedTarget = Math.min(stepCount - 1, Math.max(0, targetStepIndex))
+
+  if (clampedTarget > currentStepIndex) {
+    return currentStepIndex + 1
+  }
+
+  if (clampedTarget < currentStepIndex) {
+    return currentStepIndex - 1
+  }
+
+  return currentStepIndex
 }
 
 function getOverallProgressForReleaseStep(
@@ -695,6 +765,7 @@ function IntroSection({
   const isWhyCarbonOverlayVisibleRef = useRef(false)
   const whyCarbonIntroPhaseRef = useRef<WhyCarbonIntroPhase>('idle')
   const introExitFallbackTimerRef = useRef<number | null>(null)
+  const floaterExitEligibleRef = useRef(false)
   const particleCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const prefersReducedMotion = useReducedMotion()
   const [whyCarbonStepIndex, setWhyCarbonStepIndex] = useState(0)
@@ -837,6 +908,21 @@ function IntroSection({
       const visualCardElement = visualCardRef.current
       const visualCardFloaterElement = visualCardFloaterRef.current
       const sectionElement = sectionRef.current
+      const trackElement = trackRef.current
+      const exitScrollOffset = trackElement ? getFloaterExitScrollOffset(trackElement) : 0
+
+      if (
+        floaterExitEligibleRef.current &&
+        exitScrollOffset > 0 &&
+        visualCardFloaterElement?.dataset.zoomActive === 'true'
+      ) {
+        applyFloaterExitScroll(visualCardFloaterElement, exitScrollOffset)
+        visualCardFloaterElement.style.opacity = '1'
+        visualCardFloaterElement.style.visibility = 'visible'
+        sectionElement?.setAttribute('data-zoom-active', 'true')
+        return
+      }
+
       const copyPhaseEndRatio = copyPhaseEndRatioRef.current
       const zoomPhaseEndRatio = zoomPhaseEndRatioRef.current
       const copyScrollProgress = getCopyScrollProgress(latestProgress, copyPhaseEndRatio)
@@ -851,18 +937,31 @@ function IntroSection({
       const introPhase = whyCarbonIntroPhaseRef.current
       const activeZoomProgress = releaseProgress > 0 ? 1 : zoomProgress
 
+      if (releaseProgress >= 1 - 0.001 || latestProgress >= 1 - 0.001) {
+        floaterExitEligibleRef.current = true
+      }
+
+      const isRestoringFromExitScroll =
+        floaterExitEligibleRef.current && exitScrollOffset > 0
+      const effectiveActiveZoomProgress = isRestoringFromExitScroll ? 1 : activeZoomProgress
+      const effectiveReleaseProgress = isRestoringFromExitScroll ? 1 : releaseProgress
+
       const isAtReleaseBoundary =
         latestProgress >= zoomPhaseEndRatio - RELEASE_PHASE_ENTER_EPSILON &&
-        activeZoomProgress > 0
+        effectiveActiveZoomProgress > 0
       const hasLeftReleasePhase =
         latestProgress < zoomPhaseEndRatio - RELEASE_PHASE_EXIT_EPSILON
+
+      if (hasLeftReleasePhase && exitScrollOffset === 0) {
+        floaterExitEligibleRef.current = false
+      }
 
       if (isAtReleaseBoundary && introPhase === 'idle') {
         whyCarbonIntroPhaseRef.current = 'entered'
         setWhyCarbonIntroPhase('entered')
       }
 
-      if (hasLeftReleasePhase && introPhase !== 'idle') {
+      if (hasLeftReleasePhase && exitScrollOffset === 0 && introPhase !== 'idle') {
         clearIntroExitFallbackTimer()
         whyCarbonIntroPhaseRef.current = 'idle'
         setWhyCarbonIntroPhase('idle')
@@ -891,19 +990,34 @@ function IntroSection({
       if (
         shouldShowOverlay &&
         currentIntroPhase === 'complete' &&
-        !isReleaseStepScrollingRef.current
+        !isReleaseStepScrollingRef.current &&
+        !(floaterExitEligibleRef.current && exitScrollOffset > 0)
       ) {
         const contentProgress = getWhyCarbonContentProgress(releaseProgress, introSlideEndRatio)
-        updateWhyCarbonStep(getReleaseStepIndexFromProgress(contentProgress, whyCarbonSteps.length))
+        const targetStepIndex = getReleaseStepIndexFromProgress(
+          contentProgress,
+          whyCarbonSteps.length,
+        )
+        const incrementalStepIndex = clampReleaseStepChange(
+          whyCarbonStepIndexRef.current,
+          targetStepIndex,
+          whyCarbonSteps.length,
+        )
+
+        updateWhyCarbonStep(incrementalStepIndex)
       }
 
-      if (hasLeftReleasePhase && whyCarbonStepIndexRef.current !== 0) {
+      if (hasLeftReleasePhase && exitScrollOffset === 0 && whyCarbonStepIndexRef.current !== 0) {
         whyCarbonStepIndexRef.current = 0
         setWhyCarbonStepIndex(0)
         setWhyCarbonSlideDirection(1)
       }
 
-      if (copyElement && copyElement.dataset.scrollGated === 'true') {
+      if (
+        !(floaterExitEligibleRef.current && exitScrollOffset > 0) &&
+        copyElement &&
+        copyElement.dataset.scrollGated === 'true'
+      ) {
         const maxScrollTop = copyElement.scrollHeight - copyElement.clientHeight
 
         if (maxScrollTop > 0) {
@@ -911,13 +1025,15 @@ function IntroSection({
         }
       }
 
-      updateRevealedParagraphIndex(copyScrollProgress)
+      if (!(floaterExitEligibleRef.current && exitScrollOffset > 0)) {
+        updateRevealedParagraphIndex(copyScrollProgress)
+      }
 
       if (!visualCardElement || !visualCardFloaterElement) {
         return
       }
 
-      if (activeZoomProgress > 0) {
+      if (effectiveActiveZoomProgress > 0) {
         if (!zoomFromRectRef.current) {
           zoomFromRectRef.current = readVisualCardRect(visualCardElement)
         }
@@ -926,12 +1042,46 @@ function IntroSection({
         visualCardElement.style.visibility = 'hidden'
         visualCardFloaterElement.style.opacity = '1'
         visualCardFloaterElement.style.visibility = 'visible'
-        applyVisualCardZoom(visualCardFloaterElement, zoomFromRectRef.current, activeZoomProgress)
+        applyVisualCardZoom(
+          visualCardFloaterElement,
+          zoomFromRectRef.current,
+          effectiveActiveZoomProgress,
+        )
 
-        if (releaseProgress > 0) {
-          applyPostZoomRelease(visualCardFloaterElement, releaseProgress)
+        if (effectiveReleaseProgress > 0) {
+          applyPostZoomRelease(visualCardFloaterElement, effectiveReleaseProgress)
         } else {
           clearPostZoomRelease(visualCardFloaterElement)
+        }
+
+        const isReleaseComplete =
+          effectiveReleaseProgress >= 1 - 0.001 ||
+          latestProgress >= 1 - 0.001 ||
+          isRestoringFromExitScroll
+
+        if (trackElement && isReleaseComplete) {
+          applyFloaterExitScroll(visualCardFloaterElement, exitScrollOffset)
+          visualCardFloaterElement.style.opacity = '1'
+          visualCardFloaterElement.style.visibility = 'visible'
+
+          if (
+            exitScrollOffset === 0 &&
+            visualCardFloaterElement.dataset.releaseActive === 'true' &&
+            visualCardFloaterElement.dataset.exitScrollLeavesUnpinned === 'true'
+          ) {
+            visualCardFloaterElement.dataset.exitScrollLeavesUnpinned = 'false'
+            applyPostZoomRelease(visualCardFloaterElement, effectiveReleaseProgress)
+          }
+        } else {
+          clearFloaterExitScroll(visualCardFloaterElement)
+
+          if (
+            visualCardFloaterElement.dataset.releaseActive === 'true' &&
+            visualCardFloaterElement.dataset.exitScrollLeavesUnpinned === 'true'
+          ) {
+            visualCardFloaterElement.dataset.exitScrollLeavesUnpinned = 'false'
+            applyPostZoomRelease(visualCardFloaterElement, effectiveReleaseProgress)
+          }
         }
 
         sectionElement?.setAttribute('data-zoom-active', 'true')
@@ -1050,6 +1200,7 @@ function IntroSection({
 
       clearVisualCardZoom(visualCardFloaterElement)
       zoomFromRectRef.current = null
+      floaterExitEligibleRef.current = false
       visualCardElement?.style.removeProperty('opacity')
       visualCardElement?.style.removeProperty('visibility')
       visualCardFloaterElement.style.opacity = '0'
@@ -1059,9 +1210,20 @@ function IntroSection({
 
     const trackVisibilityObserver = new IntersectionObserver(
       ([entry]) => {
-        if (!entry.isIntersecting) {
-          resetVisualCardZoom()
+        if (entry.isIntersecting) {
+          return
         }
+
+        const visualCardFloaterElement = visualCardFloaterRef.current
+
+        if (
+          visualCardFloaterElement?.dataset.exitScrollActive === 'true' ||
+          floaterExitEligibleRef.current
+        ) {
+          return
+        }
+
+        resetVisualCardZoom()
       },
       { threshold: 0 },
     )
@@ -1073,7 +1235,55 @@ function IntroSection({
     }
   }, [prefersReducedMotion])
 
-  useMotionValueEvent(scrollYProgress, 'change', syncIntroScrollState)
+  useMotionValueEvent(scrollYProgress, 'change', (latestProgress) => {
+    const trackElement = trackRef.current
+
+    if (
+      trackElement &&
+      floaterExitEligibleRef.current &&
+      getFloaterExitScrollOffset(trackElement) > 0
+    ) {
+      return
+    }
+
+    syncIntroScrollState(latestProgress)
+  })
+
+  useEffect(() => {
+    if (prefersReducedMotion) {
+      return
+    }
+
+    let exitScrollRafId = 0
+
+    const handleWindowScroll = () => {
+      if (
+        !floaterExitEligibleRef.current &&
+        visualCardFloaterRef.current?.dataset.zoomActive !== 'true'
+      ) {
+        return
+      }
+
+      if (exitScrollRafId) {
+        return
+      }
+
+      exitScrollRafId = window.requestAnimationFrame(() => {
+        exitScrollRafId = 0
+        syncIntroScrollState(scrollYProgress.get())
+      })
+    }
+
+    window.addEventListener('scroll', handleWindowScroll, { passive: true })
+
+    return () => {
+      window.removeEventListener('scroll', handleWindowScroll)
+
+      if (exitScrollRafId) {
+        window.cancelAnimationFrame(exitScrollRafId)
+      }
+    }
+  }, [prefersReducedMotion, scrollYProgress, syncIntroScrollState])
 
   useEffect(() => {
     if (prefersReducedMotion) {
@@ -1090,6 +1300,12 @@ function IntroSection({
         !isScrollGatedRef.current ||
         isReleaseStepScrollingRef.current
       ) {
+        return
+      }
+
+      const exitScrollOffset = getFloaterExitScrollOffset(trackElement)
+
+      if (floaterExitEligibleRef.current && exitScrollOffset > 0) {
         return
       }
 

@@ -1106,8 +1106,7 @@ function IntroSection({
 
       const isAtIntroHold =
         introPhase === 'entered' &&
-        Math.ceil(currentOverallProgress * 1000) + 200 > Math.ceil(zoomPhaseEndRatio * 1000)
-
+        Math.ceil(currentOverallProgress * 1000) > (Math.ceil(zoomPhaseEndRatio * 1000) + 60)
       if (isAtIntroHold) {
         if (direction > 0) {
           event.preventDefault()

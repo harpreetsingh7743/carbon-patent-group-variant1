@@ -8,8 +8,8 @@
 .animated-words-text__word {
   display: inline-block;
   will-change: transform;
-  font-size:1.75rem;
-  font-weight: 500;
+  font-size:1.45rem;
+  font-weight: 400;
   letter-spacing: -0.03em;
   text-decoration: none;
 }

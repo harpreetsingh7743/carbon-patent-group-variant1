@@ -225,7 +225,16 @@ function getRevealedParagraphIndex(
       }
     })
 
-    return nextIndex
+    if (copyScrollProgress <= 0) {
+      return nextIndex
+    }
+
+    const progressIndex = Math.min(
+      paragraphCount - 1,
+      Math.floor(copyScrollProgress * paragraphCount),
+    )
+
+    return Math.max(nextIndex, progressIndex)
   }
 
   if (copyScrollProgress <= 0) {
@@ -731,15 +740,11 @@ function createParticles(canvasWidth: number, canvasHeight: number) {
 
 const defaultParagraphs = [
   `Strong patents don't happen by accident. They're built through precise drafting, experienced prosecution, and advice that connects technical detail to commercial reality.`,
-  `Carbon Patents does one thing; we secure and manage patent rights in Canada. Our team works across life sciences, pharmaceuticals, chemistry, medical devices, software, electrical, mechanical, and emerging technologies. We have the depth of experience to handle complex subject matter and the focus to get it right. Eiusmod occaecat in elit qui. Ad duis nisi laboris est irure et commodo qui. Non eu eu cillum culpa amet labore ipsum aute laborum qui.`,
-
-  `Sit sunt occaecat ex adipisicing reprehenderit voluptate in labore proident. Est Lorem nostrud deserunt esse deserunt veniam nisi duis qui veniam sunt. Do ullamco est consectetur sunt laboris commodo qui dolore enim laborum. Cupidatat et in aliquip incididunt esse occaecat aliqua amet dolor aliquip sint ipsum amet. Id aute sunt quis dolor pariatur nulla non. Velit sint do in amet eu non.`,
-
-  `Amet incididunt pariatur reprehenderit fugiat magna tempor mollit tempor laboris eiusmod occaecat quis non. Laborum cupidatat ea laborum nulla id officia qui minim ea nostrud ut sit deserunt irure. Amet fugiat et dolor eu fugiat nisi reprehenderit ea. Veniam fugiat cillum minim voluptate cillum aliquip velit laboris exercitation Lorem ad culpa dolor. Excepteur laborum tempor qui cupidatat labore. Est ut consequat nulla esse minim Lorem excepteur cupidatat proident laborum non.`,
-
-  `Duis cupidatat duis eiusmod exercitation nisi esse enim enim. Labore velit commodo mollit laborum excepteur reprehenderit esse sit. Ea labore consequat culpa nostrud et ea enim dolor exercitation elit occaecat ipsum. Fugiat non magna mollit sunt irure laborum enim ullamco velit. Sunt mollit do proident deserunt sit. Mollit excepteur laborum in velit reprehenderit id dolore commodo voluptate. Sunt consectetur aliquip in occaecat.`,
-
-  `Id tempor excepteur laboris enim exercitation id in dolore deserunt consectetur. Ullamco aliquip duis et magna ea irure pariatur consectetur nisi. Elit aliquip aliquip officia sit duis duis dolor elit eiusmod pariatur. Sunt amet ipsum occaecat anim aliqua laboris veniam labore culpa consectetur duis irure Lorem ut. Eu enim laborum excepteur excepteur proident dolor veniam incididunt culpa in Lorem. Duis aliquip quis sit sit laboris labore labore id duis nulla.`,
+  `Carbon Patents does one thing: we secure and manage patent rights in Canada. From filing through prosecution to portfolio management, that focus is what we bring to every matter.`,
+  `Our team works across life sciences, chemistry, medical devices, software, electrical, mechanical, and emerging technologies. We have the depth to handle complex subject matter and the discipline to get it right.`,
+  `We work with innovative companies, research institutions, and foreign law firms who need reliable Canadian counsel. You get direct access to specialists who understand both the science and the strategy.`,
+  `Every application is shaped with your commercial goals in mind. We help you protect what matters, avoid unnecessary cost, and build portfolios that support real growth.`,
+  `Tier-1 prosecution without the tier-1 overhead. Carbon Patents gives you experienced patent agents who stay close to your matter from start to finish.`,
 ]
 
 function IntroSection({

@@ -12,11 +12,11 @@ import AnimatedWordsText from '../../components/animated-words-text'
 import './styles.css'
 import WhyCarbonIntroTitle from './why-carbon-intro-title'
 
-const PARTICLE_GRID_GAP = 25
+const PARTICLE_GRID_GAP = 42
+const PARTICLE_MOBILE_GRID_GAP = 56
 const PARTICLE_REPEL_RADIUS = 130
 const PARTICLE_PULL_STRENGTH = 0.018
 const PARTICLE_DAMPING = 0.92
-const PARTICLE_GLOW_COLOR = 'rgba(149, 149, 149, 0.16)'
 const PARTICLE_FILL_COLOR = 'rgba(134, 134, 134, 0.96)'
 const PARTICLE_IDLE_VELOCITY_THRESHOLD = 0.02
 const PARTICLE_IDLE_OFFSET_THRESHOLD = 0.02
@@ -711,11 +711,15 @@ class IntroBackgroundParticle {
 
 function createParticleSeeds(canvasWidth: number, canvasHeight: number) {
   const particleSeeds: IntroParticleSeed[] = []
-  const startX = PARTICLE_GRID_GAP / 2
-  const startY = PARTICLE_GRID_GAP / 2
+  const gridGap =
+    window.matchMedia('(pointer: coarse)').matches || window.innerWidth < 768
+      ? PARTICLE_MOBILE_GRID_GAP
+      : PARTICLE_GRID_GAP
+  const startX = gridGap / 2
+  const startY = gridGap / 2
 
-  for (let y = startY; y < canvasHeight; y += PARTICLE_GRID_GAP) {
-    for (let x = startX; x < canvasWidth; x += PARTICLE_GRID_GAP) {
+  for (let y = startY; y < canvasHeight; y += gridGap) {
+    for (let x = startX; x < canvasWidth; x += gridGap) {
       const normalizedX = x / Math.max(canvasWidth, 1)
       const normalizedY = y / Math.max(canvasHeight, 1)
       const waveOffset = Math.sin(normalizedX * Math.PI * 4) + Math.cos(normalizedY * Math.PI * 3)
@@ -1416,6 +1420,10 @@ function IntroSection({
   }, [prefersReducedMotion, resetIntroToEntered, scrollYProgress, triggerIntroExit, updateWhyCarbonStep])
 
   useEffect(() => {
+    if (prefersReducedMotion) {
+      return
+    }
+
     const sectionElement = sectionRef.current
     const canvasElement = particleCanvasRef.current
 
@@ -1433,12 +1441,20 @@ function IntroSection({
     let animationFrameId = 0
     let canvasWidth = 0
     let canvasHeight = 0
-    let isSectionVisible = true
+    let isSectionVisible = false
+    let isFieldInitialized = false
     let isAnimationRunning = false
     let particles: IntroBackgroundParticle[] = []
 
+    const getCanvasPixelRatio = () => {
+      const isMobileViewport =
+        window.matchMedia('(pointer: coarse)').matches || window.innerWidth < 768
+
+      return isMobileViewport ? 1 : Math.min(window.devicePixelRatio || 1, 2)
+    }
+
     const setupCanvasDimensions = () => {
-      const pixelRatio = Math.min(window.devicePixelRatio || 1, 2)
+      const pixelRatio = getCanvasPixelRatio()
 
       canvasWidth = Math.max(1, Math.floor(sectionElement.clientWidth))
       canvasHeight = Math.max(1, Math.floor(sectionElement.clientHeight))
@@ -1456,8 +1472,6 @@ function IntroSection({
 
       context.clearRect(0, 0, canvasWidth, canvasHeight)
       context.fillStyle = PARTICLE_FILL_COLOR
-      context.shadowColor = PARTICLE_GLOW_COLOR
-      context.shadowBlur = mouseState.active ? 4 : 0
 
       for (let particleIndex = 0; particleIndex < particles.length; particleIndex += 1) {
         particles[particleIndex].update(mouseState)
@@ -1469,9 +1483,17 @@ function IntroSection({
       }
 
       context.globalAlpha = 1
-      context.shadowBlur = 0
 
       return hasActiveMotion
+    }
+
+    const ensureParticleField = () => {
+      if (isFieldInitialized) {
+        return
+      }
+
+      isFieldInitialized = true
+      rebuildParticleField()
     }
 
     const rebuildParticleField = () => {
@@ -1525,6 +1547,10 @@ function IntroSection({
     }
 
     const handleResize = () => {
+      if (!isFieldInitialized) {
+        return
+      }
+
       rebuildParticleField()
       startParticleAnimation()
     }
@@ -1535,18 +1561,17 @@ function IntroSection({
           isSectionVisible = entry.isIntersecting
 
           if (entry.isIntersecting) {
+            ensureParticleField()
             startParticleAnimation()
           } else {
             stopParticleAnimation()
           }
         })
       },
-      { threshold: 0.16 },
+      { threshold: 0.16, rootMargin: '120px 0px' },
     )
 
     visibilityObserver.observe(sectionElement)
-    rebuildParticleField()
-    startParticleAnimation()
 
     window.addEventListener('resize', handleResize)
     sectionElement.addEventListener('pointermove', handlePointerMove)
@@ -1559,7 +1584,7 @@ function IntroSection({
       sectionElement.removeEventListener('pointerleave', handlePointerLeave)
       visibilityObserver.disconnect()
     }
-  }, [])
+  }, [prefersReducedMotion])
 
   return (
     <motion.div
@@ -1576,11 +1601,13 @@ function IntroSection({
         viewport={{ amount: 0.35, once: true }}
         transition={{ duration: 0.65, ease: [0.22, 1, 0.36, 1] }}
       >
-        <canvas
-          ref={particleCanvasRef}
-          className="intro-section__particle-canvas"
-          aria-hidden="true"
-        />
+        {!prefersReducedMotion ? (
+          <canvas
+            ref={particleCanvasRef}
+            className="intro-section__particle-canvas"
+            aria-hidden="true"
+          />
+        ) : null}
 
         <div className="intro-section__background-overlay" aria-hidden="true" />
 

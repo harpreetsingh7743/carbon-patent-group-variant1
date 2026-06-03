@@ -1,17 +1,22 @@
+import { useReducedMotion } from 'framer-motion'
 import { useEffect, useRef } from 'react'
 
 import './styles.css'
 
 const PARTICLE_IMAGE_SOURCE = '/leafparticles.png'
-const PARTICLE_SAMPLE_STEP = 5
-const PARTICLE_MAX_COUNT = 12000
-const REVERTED_PARTICLE_SAMPLE_STEP = 3
-const REVERTED_PARTICLE_MAX_COUNT = 14000
+const PARTICLE_SAMPLE_STEP = 6
+const PARTICLE_MAX_COUNT = 4500
+const PARTICLE_MOBILE_SAMPLE_STEP = 8
+const PARTICLE_MOBILE_MAX_COUNT = 2200
+const REVERTED_PARTICLE_SAMPLE_STEP = 6
+const REVERTED_PARTICLE_MAX_COUNT = 4000
+const PARTICLE_SAMPLE_MAX_WIDTH = 960
 const PARTICLE_REPEL_RADIUS = 120
 const PARTICLE_PULL_STRENGTH = 0.028
 const PARTICLE_DAMPING = 0.9
-const PARTICLE_GLOW_COLOR = 'rgba(99, 213, 255, 0.8)'
 const PARTICLE_FILL_COLOR = 'rgba(99, 213, 255, 1)'
+const PARTICLE_IDLE_VELOCITY_THRESHOLD = 0.02
+const PARTICLE_IDLE_OFFSET_THRESHOLD = 0.02
 const PARTICLE_THRESHOLD_ALPHA = 120
 const PARTICLE_THRESHOLD_BRIGHTNESS = 48
 // Toggle between the original leaf mask and the inverted leaf cutout mode.
@@ -26,21 +31,19 @@ class HeroParticle {
   opacity: number
   velocityX: number
   velocityY: number
-  driftSeed: number
 
-  constructor({ x, y, size, opacity }: HeroParticlePoint, canvasWidth: number, canvasHeight: number) {
+  constructor({ x, y, size, opacity }: HeroParticlePoint) {
     this.baseX = x
     this.baseY = y
-    this.x = Math.random() * canvasWidth
-    this.y = Math.random() * canvasHeight
+    this.x = x
+    this.y = y
     this.size = size
     this.opacity = opacity
     this.velocityX = 0
     this.velocityY = 0
-    this.driftSeed = Math.random() * Math.PI * 2
   }
 
-  update(mouseState: HeroParticleMouseState, tick: number) {
+  update(mouseState: HeroParticleMouseState) {
     if (mouseState.active) {
       const deltaX = this.x - mouseState.x
       const deltaY = this.y - mouseState.y
@@ -53,11 +56,8 @@ class HeroParticle {
       }
     }
 
-    const driftX = Math.cos(tick * 0.017 + this.driftSeed) * 1.8
-    const driftY = Math.sin(tick * 0.015 + this.driftSeed) * 1.8
-
-    this.velocityX += (this.baseX + driftX - this.x) * PARTICLE_PULL_STRENGTH
-    this.velocityY += (this.baseY + driftY - this.y) * PARTICLE_PULL_STRENGTH
+    this.velocityX += (this.baseX - this.x) * PARTICLE_PULL_STRENGTH
+    this.velocityY += (this.baseY - this.y) * PARTICLE_PULL_STRENGTH
     this.velocityX *= PARTICLE_DAMPING
     this.velocityY *= PARTICLE_DAMPING
     this.x += this.velocityX
@@ -67,6 +67,18 @@ class HeroParticle {
   draw(context: CanvasRenderingContext2D) {
     context.globalAlpha = this.opacity
     context.fillRect(this.x, this.y, this.size, this.size)
+  }
+
+  isMoving() {
+    const offsetX = Math.abs(this.baseX - this.x)
+    const offsetY = Math.abs(this.baseY - this.y)
+    const velocity = Math.abs(this.velocityX) + Math.abs(this.velocityY)
+
+    return (
+      velocity > PARTICLE_IDLE_VELOCITY_THRESHOLD ||
+      offsetX > PARTICLE_IDLE_OFFSET_THRESHOLD ||
+      offsetY > PARTICLE_IDLE_OFFSET_THRESHOLD
+    )
   }
 }
 
@@ -81,13 +93,24 @@ function getParticleOpacity(brightness: number, alpha: number) {
   return Math.min(1, 0.28 + normalizedBrightness * 0.72) * normalizedAlpha
 }
 
+function isMobileViewport() {
+  return (
+    window.matchMedia('(pointer: coarse)').matches ||
+    window.innerWidth < 768
+  )
+}
+
+function getCanvasPixelRatio() {
+  return isMobileViewport() ? 1 : Math.min(window.devicePixelRatio || 1, 2)
+}
+
 function getParticleSampleStep(
   canvasWidth: number,
   canvasHeight: number,
   isRevertedMode: boolean,
 ) {
   if (!isRevertedMode) {
-    return PARTICLE_SAMPLE_STEP
+    return isMobileViewport() ? PARTICLE_MOBILE_SAMPLE_STEP : PARTICLE_SAMPLE_STEP
   }
 
   const canvasArea = canvasWidth * canvasHeight
@@ -99,7 +122,11 @@ function getParticleSampleStep(
 }
 
 function getParticleMaxCount(isRevertedMode: boolean) {
-  return isRevertedMode ? REVERTED_PARTICLE_MAX_COUNT : PARTICLE_MAX_COUNT
+  if (isRevertedMode) {
+    return REVERTED_PARTICLE_MAX_COUNT
+  }
+
+  return isMobileViewport() ? PARTICLE_MOBILE_MAX_COUNT : PARTICLE_MAX_COUNT
 }
 
 function getRevertedParticleSize(x: number, y: number) {
@@ -121,8 +148,13 @@ function HeroSection({
 }: HeroSectionProps) {
   const sectionRef = useRef<HTMLElement | null>(null)
   const particleCanvasRef = useRef<HTMLCanvasElement | null>(null)
+  const prefersReducedMotion = useReducedMotion()
 
   useEffect(() => {
+    if (prefersReducedMotion) {
+      return
+    }
+
     const sectionElement = sectionRef.current
     const canvasElement = particleCanvasRef.current
 
@@ -139,7 +171,6 @@ function HeroSection({
     const particleImage = new Image()
     const mouseState: HeroParticleMouseState = { x: 0, y: 0, active: false }
     let animationFrameId = 0
-    let animationTick = 0
     let canvasWidth = 0
     let canvasHeight = 0
     let isSectionVisible = true
@@ -147,7 +178,7 @@ function HeroSection({
     let particles: HeroParticle[] = []
 
     const setupCanvas = () => {
-      const pixelRatio = Math.min(window.devicePixelRatio || 1, 2)
+      const pixelRatio = getCanvasPixelRatio()
 
       canvasWidth = Math.max(1, Math.floor(sectionElement.clientWidth))
       canvasHeight = Math.max(1, Math.floor(sectionElement.clientHeight))
@@ -175,32 +206,43 @@ function HeroSection({
         return
       }
 
-      offscreenCanvas.width = canvasWidth
-      offscreenCanvas.height = canvasHeight
+      const sampleScale = Math.min(1, PARTICLE_SAMPLE_MAX_WIDTH / canvasWidth)
+      const sampleWidth = Math.max(1, Math.floor(canvasWidth * sampleScale))
+      const sampleHeight = Math.max(1, Math.floor(canvasHeight * sampleScale))
 
-      const maxDrawWidth = canvasWidth * 0.82
-      const maxDrawHeight = canvasHeight * 0.74
+      offscreenCanvas.width = sampleWidth
+      offscreenCanvas.height = sampleHeight
+
+      const maxDrawWidth = sampleWidth * 0.82
+      const maxDrawHeight = sampleHeight * 0.74
       const imageScale = Math.min(
         maxDrawWidth / particleImage.naturalWidth,
         maxDrawHeight / particleImage.naturalHeight,
       )
       const drawWidth = Math.max(1, Math.floor(particleImage.naturalWidth * imageScale))
       const drawHeight = Math.max(1, Math.floor(particleImage.naturalHeight * imageScale))
-      const offsetX = Math.floor((canvasWidth - drawWidth) / 2)
-      const centeredOffsetY = Math.floor((canvasHeight - drawHeight) / 2)
-      const offsetY = Math.max(0, centeredOffsetY + Math.floor(canvasHeight * 0.12))
+      const offsetX = Math.floor((sampleWidth - drawWidth) / 2)
+      const centeredOffsetY = Math.floor((sampleHeight - drawHeight) / 2)
+      const offsetY = Math.max(0, centeredOffsetY + Math.floor(sampleHeight * 0.12))
 
-      offscreenContext.clearRect(0, 0, canvasWidth, canvasHeight)
+      offscreenContext.clearRect(0, 0, sampleWidth, sampleHeight)
       offscreenContext.drawImage(particleImage, offsetX, offsetY, drawWidth, drawHeight)
 
-      const { data } = offscreenContext.getImageData(0, 0, canvasWidth, canvasHeight)
-      const nextParticles: HeroParticle[] = []
-      const particleSampleStep = getParticleSampleStep(canvasWidth, canvasHeight, isReverted)
+      const { data } = offscreenContext.getImageData(0, 0, sampleWidth, sampleHeight)
+      const candidatePoints: HeroParticlePoint[] = []
+      const particleSampleStep = Math.max(
+        1,
+        Math.round(getParticleSampleStep(canvasWidth, canvasHeight, isReverted) * sampleScale),
+      )
       const particleMaxCount = getParticleMaxCount(isReverted)
+      const scanStartX = offsetX
+      const scanStartY = offsetY
+      const scanEndX = offsetX + drawWidth
+      const scanEndY = offsetY + drawHeight
 
-      for (let y = 0; y < canvasHeight; y += particleSampleStep) {
-        for (let x = 0; x < canvasWidth; x += particleSampleStep) {
-          const pixelIndex = (y * canvasWidth + x) * 4
+      for (let y = scanStartY; y < scanEndY; y += particleSampleStep) {
+        for (let x = scanStartX; x < scanEndX; x += particleSampleStep) {
+          const pixelIndex = (y * sampleWidth + x) * 4
           const red = data[pixelIndex]
           const green = data[pixelIndex + 1]
           const blue = data[pixelIndex + 2]
@@ -214,46 +256,62 @@ function HeroSection({
             : isLeafParticlePixel
 
           if (shouldCreateParticle) {
-            nextParticles.push(
-              new HeroParticle(
-                {
-                  x,
-                  y,
-                  size: isReverted
-                    ? getRevertedParticleSize(x, y)
-                    : getParticleSize(brightness),
-                  opacity: isReverted
-                    ? getRevertedParticleOpacity(x, y)
-                    : getParticleOpacity(brightness, alpha),
-                },
-                canvasWidth,
-                canvasHeight,
-              ),
-            )
-          }
-
-          if (nextParticles.length >= particleMaxCount) {
-            particles = nextParticles
-            return
+            candidatePoints.push({
+              x: x / sampleScale,
+              y: y / sampleScale,
+              size: isReverted
+                ? getRevertedParticleSize(x, y)
+                : getParticleSize(brightness),
+              opacity: isReverted
+                ? getRevertedParticleOpacity(x, y)
+                : getParticleOpacity(brightness, alpha),
+            })
           }
         }
+      }
+
+      const nextParticles: HeroParticle[] = []
+      const candidateCount = candidatePoints.length
+
+      if (candidateCount === 0) {
+        particles = nextParticles
+        return
+      }
+
+      const subsampleStride =
+        candidateCount > particleMaxCount ? candidateCount / particleMaxCount : 1
+
+      for (
+        let candidateIndex = 0;
+        candidateIndex < candidateCount && nextParticles.length < particleMaxCount;
+        candidateIndex += subsampleStride
+      ) {
+        nextParticles.push(
+          new HeroParticle(candidatePoints[Math.floor(candidateIndex)]),
+        )
       }
 
       particles = nextParticles
     }
 
     const drawParticles = () => {
+      let hasActiveMotion = mouseState.active
+
       context.clearRect(0, 0, canvasWidth, canvasHeight)
       context.fillStyle = PARTICLE_FILL_COLOR
-      context.shadowColor = PARTICLE_GLOW_COLOR
-      context.shadowBlur = 14
 
       for (let particleIndex = 0; particleIndex < particles.length; particleIndex += 1) {
-        particles[particleIndex].update(mouseState, animationTick)
+        particles[particleIndex].update(mouseState)
         particles[particleIndex].draw(context)
+
+        if (!hasActiveMotion && particles[particleIndex].isMoving()) {
+          hasActiveMotion = true
+        }
       }
 
       context.globalAlpha = 1
+
+      return hasActiveMotion
     }
 
     const animateParticles = () => {
@@ -262,8 +320,13 @@ function HeroSection({
         return
       }
 
-      animationTick += 1
-      drawParticles()
+      const hasActiveMotion = drawParticles()
+
+      if (!hasActiveMotion) {
+        isAnimationRunning = false
+        return
+      }
+
       animationFrameId = window.requestAnimationFrame(animateParticles)
     }
 
@@ -293,10 +356,12 @@ function HeroSection({
       mouseState.x = event.clientX - sectionBounds.left
       mouseState.y = event.clientY - sectionBounds.top
       mouseState.active = true
+      startAnimation()
     }
 
     const handlePointerLeave = () => {
       mouseState.active = false
+      startAnimation()
     }
 
     const handleResize = () => {
@@ -323,7 +388,6 @@ function HeroSection({
 
     particleImage.onload = () => {
       rebuildParticleCanvas()
-      startAnimation()
     }
     particleImage.src = PARTICLE_IMAGE_SOURCE
 
@@ -333,7 +397,6 @@ function HeroSection({
 
     if (particleImage.complete) {
       rebuildParticleCanvas()
-      startAnimation()
     }
 
     return () => {
@@ -343,15 +406,17 @@ function HeroSection({
       sectionElement.removeEventListener('pointerleave', handlePointerLeave)
       visibilityObserver.disconnect()
     }
-  }, [])
+  }, [prefersReducedMotion])
 
   return (
     <section ref={sectionRef} className="hero-section">
-      <canvas
-        ref={particleCanvasRef}
-        className="hero-section__particle-canvas"
-        aria-hidden="true"
-      />
+      {!prefersReducedMotion ? (
+        <canvas
+          ref={particleCanvasRef}
+          className="hero-section__particle-canvas"
+          aria-hidden="true"
+        />
+      ) : null}
 
       <div className="hero-section__particle-overlay" aria-hidden="true" />
 

@@ -1,4 +1,10 @@
 .intro-section__track {
+  --intro-layout-max-width: min(100%, 95vw);
+  --intro-block-padding-top: 13vh;
+  --intro-visual-size: min(
+    calc(95vh - var(--intro-block-padding-top)),
+    calc(100vh - var(--intro-block-padding-top) - 4rem)
+  );
   position: relative;
   isolation: isolate;
 }
@@ -9,8 +15,9 @@
   min-height: 100vh;
   height: 100vh;
   display: flex;
-  align-items: center;
-  padding: clamp(4.5rem, 8vw, 7rem) 1.5rem;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 0 clamp(1.25rem, 5vw, 2.5rem) clamp(2rem, 3vw, 2.5rem);
   background: linear-gradient(
     180deg,
     var(--color-white) 0%,
@@ -66,12 +73,14 @@
 }
 
 .intro-section__container {
-  width: min(100%, 72rem);
+  width: var(--intro-layout-max-width);
   margin: 0 auto;
+  padding-top: var(--intro-block-padding-top);
+  box-sizing: border-box;
   display: grid;
-  grid-template-columns: minmax(18rem, 70vh) minmax(16rem, 1fr);
+  grid-template-columns: minmax(18rem, var(--intro-visual-size)) minmax(16rem, 1fr);
   align-items: center;
-  gap: clamp(2.5rem, 6vw, 5rem);
+  gap: clamp(2rem, 4vw, 3.5rem);
   position: relative;
   z-index: 1;
 }
@@ -79,15 +88,15 @@
 .intro-section__visual-shell {
   display: flex;
   justify-content: center;
-  width: min(100%, 70vh);
-  height: 70vh;
+  width: min(100%, var(--intro-visual-size));
+  height: var(--intro-visual-size);
   flex-shrink: 0;
 }
 
 .intro-section__content-inner {
   display: flex;
   flex-direction: column;
-  gap: 1.15rem;
+  gap: clamp(1.25rem, 2vw, 1.75rem);
   flex: 1;
   min-height: 0;
 }
@@ -156,8 +165,8 @@
 
 .intro-section__visual-card {
   position: relative;
-  width: min(100%, 70vh);
-  height: 70vh;
+  width: min(100%, var(--intro-visual-size));
+  height: var(--intro-visual-size);
   aspect-ratio: 1 / 1;
   display: flex;
   align-items: center;
@@ -166,8 +175,8 @@
   --intro-zoom-leaf-left: -27rem;
   --intro-zoom-leaf-top: calc(50% - var(--intro-card-leaf-offset));
   --intro-zoom-leaf-width: min(100%, 65rem);
-  --intro-card-leaf-offset: min(40%, 17.5rem);
-  --intro-card-leaf-width: min(80%, 35rem);
+  --intro-card-leaf-offset: min(40%, 20rem);
+  --intro-card-leaf-width: min(80%, 42rem);
   background: linear-gradient(
     135deg,
     var(--color-header-action-background) 0%,
@@ -249,7 +258,7 @@
 }
 
 .intro-section__visual-image {
-  width: min(80%, 35rem);
+  width: min(80%, 42rem);
   max-width: 100%;
   object-fit: contain;
   position: relative;
@@ -490,15 +499,15 @@
 .intro-section__content {
   display: flex;
   flex-direction: column;
-  max-width: 31rem;
-  max-height: 70vh;
+  max-width: min(62rem, 100%);
+  max-height: var(--intro-visual-size);
   min-height: 0;
 }
 
 .intro-section__title {
   color: var(--color-main-background);
   font-family: var(--font-family-primary);
-  font-size: clamp(2.75rem, 5vw, 4rem);
+  font-size: clamp(3rem, 4.5vw, 5rem);
   font-weight: 700;
   line-height: 0.98;
   letter-spacing: -0.04em;
@@ -507,11 +516,10 @@
 .intro-section__copy {
   display: flex;
   flex-direction: column;
-  gap: 8rem;
+  gap: 25rem;
   flex: 1;
   min-height: 0;
   overflow: hidden;
-  padding-right: 0.35rem;
   overscroll-behavior: contain;
 }
 
@@ -528,24 +536,31 @@
 .intro-section__paragraph {
   color: var(--color-intro-copy-text);
   font-family: var(--font-family-primary);
-  font-size: 1rem;
+  font-size: clamp(1.05rem, 1.25vw, 1.35rem);
   font-weight: 400;
   line-height: 1.72;
 }
 
 @media (max-width: 980px) {
-  .intro-section {
-    padding-block: 4rem;
-  }
-
   .intro-section__container {
     grid-template-columns: 1fr;
     gap: 2.5rem;
     justify-items: center;
   }
 
+  .intro-section__track {
+    --intro-visual-size: min(
+      calc(92vh - var(--intro-block-padding-top)),
+      calc(100vh - var(--intro-block-padding-top) - 5rem)
+    );
+  }
+
+  .intro-section__container {
+    width: min(100%, 95vw);
+  }
+
   .intro-section__content {
-    max-width: 36rem;
+    max-width: min(40rem, 100%);
     max-height: none;
   }
 
@@ -556,12 +571,20 @@
 
 @media (max-width: 640px) {
   .intro-section {
-    padding: 3.5rem 1.25rem;
+    padding: 0 1.25rem clamp(2rem, 6vw, 3rem);
+  }
+
+  .intro-section__track {
+    --intro-block-padding-top: 13vh;
+    --intro-visual-size: min(
+      calc(90vh - var(--intro-block-padding-top)),
+      28rem
+    );
   }
 
   .intro-section__visual-shell {
-    width: min(100%, 23rem);
-    height: min(70vh, 23rem);
+    width: min(100%, 28rem);
+    height: var(--intro-visual-size);
   }
 
   .intro-section__visual-card {
@@ -569,8 +592,8 @@
     --intro-cutout-width: 1.5rem;
     --intro-cutout-curve: 1.6rem;
     --intro-cutout-height: 7rem;
-    width: min(100%, 23rem);
-    height: min(70vh, 23rem);
+    width: min(100%, 28rem);
+    height: var(--intro-visual-size);
     border-radius: 1.5rem;
   }
 

@@ -8,7 +8,6 @@ import {
 } from 'framer-motion'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 
-import AnimatedWordsText from '../../components/animated-words-text'
 import './styles.css'
 import WhyCarbonIntroTitle from './why-carbon-intro-title'
 
@@ -198,50 +197,6 @@ function getCopyScrollProgress(overallProgress: number, copyPhaseEndRatio: numbe
   }
 
   return Math.min(1, overallProgress / copyPhaseEndRatio)
-}
-
-const COPY_PARAGRAPH_REVEAL_VIEWPORT_RATIO = 0.55
-
-function getRevealedParagraphIndex(
-  copyElement: HTMLDivElement,
-  paragraphElements: readonly (HTMLParagraphElement | null)[],
-  copyScrollProgress: number,
-) {
-  const paragraphCount = paragraphElements.filter(Boolean).length
-
-  if (paragraphCount === 0) {
-    return -1
-  }
-
-  if (copyElement.dataset.scrollGated === 'true') {
-    const revealLine =
-      copyElement.scrollTop +
-      copyElement.clientHeight * COPY_PARAGRAPH_REVEAL_VIEWPORT_RATIO
-    let nextIndex = -1
-
-    paragraphElements.forEach((element, index) => {
-      if (element && element.offsetTop <= revealLine) {
-        nextIndex = index
-      }
-    })
-
-    if (copyScrollProgress <= 0) {
-      return nextIndex
-    }
-
-    const progressIndex = Math.min(
-      paragraphCount - 1,
-      Math.floor(copyScrollProgress * paragraphCount),
-    )
-
-    return Math.max(nextIndex, progressIndex)
-  }
-
-  if (copyScrollProgress <= 0) {
-    return 0
-  }
-
-  return Math.min(paragraphCount - 1, Math.floor(copyScrollProgress * paragraphCount))
 }
 
 function getVisualCardZoomProgress(
@@ -759,8 +714,6 @@ function IntroSection({
   const trackRef = useRef<HTMLDivElement | null>(null)
   const sectionRef = useRef<HTMLElement | null>(null)
   const copyRef = useRef<HTMLDivElement | null>(null)
-  const paragraphRefs = useRef<(HTMLParagraphElement | null)[]>([])
-  const revealedParagraphIndexRef = useRef(-1)
   const visualCardRef = useRef<HTMLDivElement | null>(null)
   const visualCardFloaterRef = useRef<HTMLDivElement | null>(null)
   const isScrollGatedRef = useRef(false)
@@ -783,29 +736,7 @@ function IntroSection({
   const [introResetKey, setIntroResetKey] = useState(0)
   const [isWhyCarbonIntroVisible, setIsWhyCarbonIntroVisible] = useState(false)
   const [isWhyCarbonOverlayVisible, setIsWhyCarbonOverlayVisible] = useState(false)
-  const [revealedParagraphIndex, setRevealedParagraphIndex] = useState(-1)
   const contentParagraphs = paragraphs.length > 0 ? paragraphs : defaultParagraphs
-
-  const updateRevealedParagraphIndex = useCallback((copyScrollProgress: number) => {
-    const copyElement = copyRef.current
-
-    if (!copyElement) {
-      return
-    }
-
-    const nextIndex = getRevealedParagraphIndex(
-      copyElement,
-      paragraphRefs.current,
-      copyScrollProgress,
-    )
-
-    if (nextIndex <= revealedParagraphIndexRef.current) {
-      return
-    }
-
-    revealedParagraphIndexRef.current = nextIndex
-    setRevealedParagraphIndex(nextIndex)
-  }, [])
 
   const updateWhyCarbonStep = useCallback((nextStepIndex: number) => {
     const clampedStepIndex = Math.min(
@@ -1034,10 +965,6 @@ function IntroSection({
         }
       }
 
-      if (!(floaterExitEligibleRef.current && exitScrollOffset > 0)) {
-        updateRevealedParagraphIndex(copyScrollProgress)
-      }
-
       if (!visualCardElement || !visualCardFloaterElement) {
         return
       }
@@ -1112,7 +1039,7 @@ function IntroSection({
         visualCardElement.style.clipPath = getVisualCardClipPath(copyScrollProgress)
       }
     },
-    [clearIntroExitFallbackTimer, prefersReducedMotion, updateRevealedParagraphIndex, updateWhyCarbonStep],
+    [clearIntroExitFallbackTimer, prefersReducedMotion, updateWhyCarbonStep],
   )
 
   useEffect(() => {
@@ -1183,12 +1110,6 @@ function IntroSection({
   }, [contentParagraphs.length, prefersReducedMotion, scrollYProgress, syncIntroScrollState])
 
   useEffect(() => {
-    paragraphRefs.current.length = contentParagraphs.length
-  }, [contentParagraphs.length])
-
-  useEffect(() => {
-    revealedParagraphIndexRef.current = -1
-    setRevealedParagraphIndex(-1)
     syncIntroScrollState(scrollYProgress.get())
   }, [introResetKey, scrollYProgress, syncIntroScrollState])
 
@@ -1653,16 +1574,12 @@ function IntroSection({
                 data-prefers-reduced-motion={prefersReducedMotion ? 'true' : 'false'}
               >
                 {contentParagraphs.map((paragraph, paragraphIndex) => (
-                  <AnimatedWordsText
+                  <p
                     key={`${paragraphIndex}-${paragraph.slice(0, 18)}`}
-                    ref={(element) => {
-                      paragraphRefs.current[paragraphIndex] = element
-                    }}
-                    text={paragraph}
                     className="intro-section__paragraph"
-                    shouldAnimate={paragraphIndex <= revealedParagraphIndex}
-                    prefersReducedMotion={Boolean(prefersReducedMotion)}
-                  />
+                  >
+                    {paragraph}
+                  </p>
                 ))}
               </motion.div>
             </motion.div>

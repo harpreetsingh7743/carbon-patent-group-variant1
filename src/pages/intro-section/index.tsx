@@ -26,6 +26,14 @@ const ZOOM_STEP_WHEEL_COOLDOWN_MS = 700
 const RELEASE_PHASE_ENTER_EPSILON = 0.0001
 const RELEASE_PHASE_EXIT_EPSILON = 0.012
 const INTRO_EXIT_FALLBACK_MS = 900
+// const INTRO_TITLE_LAYOUT_COPY_PORTION = 0.42
+// const INTRO_TITLE_HERO_SCALE = 1.28
+// const INTRO_TITLE_HERO_FONT_MIN_REM = 4.65
+// const INTRO_TITLE_HERO_FONT_VW = 8.15
+// const INTRO_TITLE_HERO_FONT_MAX_REM = 8.35
+// const INTRO_TITLE_FINAL_FONT_MIN_REM = 2.45
+// const INTRO_TITLE_FINAL_FONT_VW = 3.5
+// const INTRO_TITLE_FINAL_FONT_MAX_REM = 3.95
 
 const whyCarbonSteps: WhyCarbonStep[] = [
   {
@@ -44,6 +52,8 @@ const whyCarbonSteps: WhyCarbonStep[] = [
       'We connect technical detail to business outcomes so your patent strategy supports real-world growth.',
   },
 ]
+
+const INTRO_COPY_REVEAL_LIFT_BUFFER_PX = 16
 
 const whyCarbonSlideEase = [0.16, 1, 0.3, 1] as const
 
@@ -189,6 +199,79 @@ function getFullscreenTargetRect(): IntroVisualCardRect {
     width: window.innerWidth,
     height: window.innerHeight,
   }
+}
+
+function getIntroCopyCenterY(contentInner: HTMLElement) {
+  const { top, height } = contentInner.getBoundingClientRect()
+
+  return top + height / 1.95
+}
+
+function splitParagraphIntoWordTokens(paragraph: string) {
+  return paragraph.split(/(\s+)/).filter((token) => token.length > 0)
+}
+
+function resetWordScrollStyles(word: HTMLSpanElement) {
+  word.removeAttribute('data-scroll-highlight')
+  word.removeAttribute('data-scroll-revealed')
+  word.style.removeProperty('color')
+  word.style.removeProperty('opacity')
+}
+
+function measureCopyRevealLiftDistance(
+  copyElement: HTMLDivElement,
+  copyContentElement: HTMLDivElement,
+  contentInner: HTMLDivElement,
+) {
+  const words = copyContentElement.querySelectorAll<HTMLSpanElement>('.intro-section__word')
+  const lastWord = words[words.length - 1]
+
+  if (!lastWord) {
+    return 0
+  }
+
+  const previousScrollTop = copyElement.scrollTop
+  const previousTransform = copyContentElement.style.transform
+
+  copyContentElement.style.removeProperty('transform')
+  copyElement.scrollTop = Math.max(0, copyElement.scrollHeight - copyElement.clientHeight)
+
+  const contentInnerRect = contentInner.getBoundingClientRect()
+  const lastWordRect = lastWord.getBoundingClientRect()
+  const centerY = getIntroCopyCenterY(contentInner)
+  const liftForReveal = lastWordRect.bottom - centerY
+  const liftToTop = lastWordRect.top - contentInnerRect.top
+  const revealGap = Math.max(liftForReveal, liftToTop, 0)
+
+  copyElement.scrollTop = previousScrollTop
+
+  if (previousTransform) {
+    copyContentElement.style.transform = previousTransform
+  }
+
+  return Math.max(0, Math.ceil(revealGap + INTRO_COPY_REVEAL_LIFT_BUFFER_PX))
+}
+
+function applyCopyScrollPosition(
+  copyElement: HTMLDivElement,
+  copyContentElement: HTMLDivElement,
+  copyScrollProgress: number,
+  copyRevealLift: number,
+) {
+  const maxScrollTop = Math.max(0, copyElement.scrollHeight - copyElement.clientHeight)
+  const copyPhaseDistance = maxScrollTop + copyRevealLift
+  const scrolledDistance = copyScrollProgress * copyPhaseDistance
+
+  copyElement.scrollTop = maxScrollTop > 0 ? Math.min(maxScrollTop, scrolledDistance) : 0
+
+  const liftAmount = Math.max(0, scrolledDistance - maxScrollTop)
+
+  if (liftAmount > 0) {
+    copyContentElement.style.transform = `translate3d(0, ${-liftAmount}px, 0)`
+    return
+  }
+
+  copyContentElement.style.removeProperty('transform')
 }
 
 function getCopyScrollProgress(overallProgress: number, copyPhaseEndRatio: number) {
@@ -698,12 +781,12 @@ function createParticles(canvasWidth: number, canvasHeight: number) {
 }
 
 const defaultParagraphs = [
-  `Strong patents don't happen by accident. They're built through precise drafting, experienced prosecution, and advice that connects technical detail to commercial reality.`,
-  `Carbon Patents does one thing: we secure and manage patent rights in Canada. From filing through prosecution to portfolio management, that focus is what we bring to every matter.`,
-  `Our team works across life sciences, chemistry, medical devices, software, electrical, mechanical, and emerging technologies. We have the depth to handle complex subject matter and the discipline to get it right.`,
-  `We work with innovative companies, research institutions, and foreign law firms who need reliable Canadian counsel. You get direct access to specialists who understand both the science and the strategy.`,
-  `Every application is shaped with your commercial goals in mind. We help you protect what matters, avoid unnecessary cost, and build portfolios that support real growth.`,
-  `Tier-1 prosecution without the tier-1 overhead. Carbon Patents gives you experienced patent agents who stay close to your matter from start to finish.`,
+  `Precise drafting. Skilled prosecution. Advice that connects science to strategy.`,
+  `We secure and manage Canadian patent rights—from filing to portfolio.`,
+  `Life sciences, chemistry, devices, software, electrical, mechanical, and more.`,
+  `Trusted counsel for companies, institutions, and foreign law firms.`,
+  `Applications shaped around your goals—protect what matters, skip the waste.`,
+  `Tier-1 prosecution. No tier-1 overhead. Agents on your matter start to finish.`,
 ]
 
 function IntroSection({
@@ -713,10 +796,16 @@ function IntroSection({
 }: IntroSectionProps) {
   const trackRef = useRef<HTMLDivElement | null>(null)
   const sectionRef = useRef<HTMLElement | null>(null)
+  const contentInnerRef = useRef<HTMLDivElement | null>(null)
+  // const titleRef = useRef<HTMLHeadingElement | null>(null)
+  // const titleHeroOffsetXRef = useRef(0)
+  // const titleHeroOffsetYRef = useRef(0)
   const copyRef = useRef<HTMLDivElement | null>(null)
+  const copyContentRef = useRef<HTMLDivElement | null>(null)
   const visualCardRef = useRef<HTMLDivElement | null>(null)
   const visualCardFloaterRef = useRef<HTMLDivElement | null>(null)
   const isScrollGatedRef = useRef(false)
+  const copyRevealLiftPxRef = useRef(0)
   const copyPhaseEndRatioRef = useRef(1)
   const zoomPhaseEndRatioRef = useRef(1)
   const zoomFromRectRef = useRef<IntroVisualCardRect | null>(null)
@@ -838,6 +927,110 @@ function IntroSection({
     return 1 - zoomProgress * 0.92
   })
 
+  // const introTitleLayoutProgress = useTransform(introCopyPhaseProgress, (copyPhaseProgress) =>
+  //   Math.min(1, copyPhaseProgress / INTRO_TITLE_LAYOUT_COPY_PORTION),
+  // )
+
+  // const introTitleTranslateY = useTransform(
+  //   [introTitleLayoutProgress, introScrollMetricsVersion],
+  //   ([layoutProgress]: [number, number]) => titleHeroOffsetYRef.current * (1 - layoutProgress),
+  // )
+
+  // const introTitleTranslateX = useTransform(
+  //   [introTitleLayoutProgress, introScrollMetricsVersion],
+  //   ([layoutProgress]: [number, number]) => titleHeroOffsetXRef.current * (1 - layoutProgress),
+  // )
+
+  // const introTitleScale = useTransform(introTitleLayoutProgress, (layoutProgress) => {
+  //   return INTRO_TITLE_HERO_SCALE + (1 - INTRO_TITLE_HERO_SCALE) * layoutProgress
+  // })
+
+  // const introTitleTransformOrigin = useTransform(introTitleLayoutProgress, (layoutProgress) => {
+  //   const originXPercent = 50 * (1 - layoutProgress)
+
+  //   return `${originXPercent}% top`
+  // })
+
+  // const introTitleFontSize = useTransform(introTitleLayoutProgress, (layoutProgress) => {
+  //   const minRem =
+  //     INTRO_TITLE_HERO_FONT_MIN_REM +
+  //     (INTRO_TITLE_FINAL_FONT_MIN_REM - INTRO_TITLE_HERO_FONT_MIN_REM) * layoutProgress
+  //   const vw =
+  //     INTRO_TITLE_HERO_FONT_VW +
+  //     (INTRO_TITLE_FINAL_FONT_VW - INTRO_TITLE_HERO_FONT_VW) * layoutProgress
+  //   const maxRem =
+  //     INTRO_TITLE_HERO_FONT_MAX_REM +
+  //     (INTRO_TITLE_FINAL_FONT_MAX_REM - INTRO_TITLE_HERO_FONT_MAX_REM) * layoutProgress
+
+  //   return `clamp(${minRem}rem, ${vw}vw, ${maxRem}rem)`
+  // })
+
+  // const measureIntroTitleHeroOffsets = useCallback(() => {
+  //   const contentInnerElement = contentInnerRef.current
+  //   const titleElement = titleRef.current
+
+  //   if (!contentInnerElement || !titleElement) {
+  //     return
+  //   }
+
+  //   const visualShellElement = contentInnerElement
+  //     .closest('.intro-section__container')
+  //     ?.querySelector<HTMLElement>('.intro-section__visual-shell')
+  //   const contentHeight = visualShellElement?.clientHeight ?? contentInnerElement.clientHeight
+  //   const contentWidth = contentInnerElement.clientWidth
+  //   const titleWidth = titleElement.offsetWidth
+  //   const measuredTitleHeight = titleElement.getBoundingClientRect().height
+  //   const scaledTitleHeight = measuredTitleHeight * INTRO_TITLE_HERO_SCALE
+
+  //   titleHeroOffsetYRef.current = Math.max(0, (contentHeight - scaledTitleHeight) / 2)
+  //   titleHeroOffsetXRef.current = Math.max(0, contentWidth / 2 - titleWidth / 2)
+  // }, [])
+
+  const updateParagraphOpacities = useCallback((copyScrollProgress: number) => {
+    const copyElement = copyRef.current
+
+    if (!copyElement) {
+      return
+    }
+
+    const words = copyElement.querySelectorAll<HTMLSpanElement>('.intro-section__word')
+    const wordCount = words.length
+
+    if (prefersReducedMotion || copyElement.dataset.scrollGated !== 'true') {
+      words.forEach((word) => {
+        resetWordScrollStyles(word)
+        word.style.opacity = '1'
+      })
+      return
+    }
+
+    if (wordCount === 0) {
+      return
+    }
+
+    const clampedProgress = Math.min(1, Math.max(0, copyScrollProgress))
+    const allWordsRevealed = clampedProgress >= 1 - 0.001
+    const activeWordIndex = allWordsRevealed
+      ? wordCount
+      : Math.min(wordCount - 1, Math.floor(clampedProgress * wordCount))
+
+    words.forEach((word, wordIndex) => {
+      resetWordScrollStyles(word)
+
+      if (allWordsRevealed || wordIndex < activeWordIndex) {
+        word.dataset.scrollRevealed = 'true'
+        return
+      }
+
+      if (wordIndex === activeWordIndex) {
+        word.dataset.scrollHighlight = 'true'
+        return
+      }
+
+      word.style.opacity = '0.25'
+    })
+  }, [prefersReducedMotion])
+
   const syncIntroScrollState = useCallback(
     (latestProgress: number) => {
       if (prefersReducedMotion) {
@@ -958,12 +1151,19 @@ function IntroSection({
         copyElement &&
         copyElement.dataset.scrollGated === 'true'
       ) {
-        const maxScrollTop = copyElement.scrollHeight - copyElement.clientHeight
+        const copyContentElement = copyContentRef.current
 
-        if (maxScrollTop > 0) {
-          copyElement.scrollTop = copyScrollProgress * maxScrollTop
+        if (copyContentElement) {
+          applyCopyScrollPosition(
+            copyElement,
+            copyContentElement,
+            copyScrollProgress,
+            copyRevealLiftPxRef.current,
+          )
         }
       }
+
+      updateParagraphOpacities(copyScrollProgress)
 
       if (!visualCardElement || !visualCardFloaterElement) {
         return
@@ -1039,7 +1239,7 @@ function IntroSection({
         visualCardElement.style.clipPath = getVisualCardClipPath(copyScrollProgress)
       }
     },
-    [clearIntroExitFallbackTimer, prefersReducedMotion, updateWhyCarbonStep],
+    [clearIntroExitFallbackTimer, prefersReducedMotion, updateParagraphOpacities, updateWhyCarbonStep],
   )
 
   useEffect(() => {
@@ -1057,8 +1257,18 @@ function IntroSection({
     }
 
     const updateScrollTrackHeight = () => {
+      const contentInner = contentInnerRef.current
+      const copyContentElement = copyContentRef.current
       const copyOverflow = Math.max(0, copyElement.scrollHeight - copyElement.clientHeight)
-      const hasScrollableCopy = copyOverflow > 0
+      const copyRevealLift =
+        contentInner && copyContentElement
+          ? measureCopyRevealLiftDistance(copyElement, copyContentElement, contentInner)
+          : 0
+
+      copyRevealLiftPxRef.current = copyRevealLift
+
+      const hasScrollableCopy = copyOverflow > 0 || copyRevealLift > 0
+      const copyPhaseScrollDistance = copyOverflow + copyRevealLift
       const zoomScrollDistance = window.innerHeight * VISUAL_CARD_ZOOM_SCROLL_MULTIPLIER
       const contentScrollDistance =
         window.innerHeight *
@@ -1066,7 +1276,7 @@ function IntroSection({
         WHY_CARBON_STEP_SCROLL_MULTIPLIER *
         whyCarbonSteps.length
       const postZoomScrollDistance = contentScrollDistance
-      const animatedScrollDistance = copyOverflow + zoomScrollDistance + postZoomScrollDistance
+      const animatedScrollDistance = copyPhaseScrollDistance + zoomScrollDistance + postZoomScrollDistance
       const hasZoomPhase = hasScrollableCopy
 
       introSlideEndRatioRef.current = 0
@@ -1076,10 +1286,10 @@ function IntroSection({
         : ''
       isScrollGatedRef.current = hasScrollableCopy
       copyPhaseEndRatioRef.current = hasZoomPhase
-        ? copyOverflow / animatedScrollDistance
+        ? copyPhaseScrollDistance / animatedScrollDistance
         : 1
       zoomPhaseEndRatioRef.current = hasZoomPhase
-        ? (copyOverflow + zoomScrollDistance) / animatedScrollDistance
+        ? (copyPhaseScrollDistance + zoomScrollDistance) / animatedScrollDistance
         : 1
       trackElement.dataset.scrollGated = hasScrollableCopy ? 'true' : 'false'
       trackElement.dataset.zoomEnabled = hasZoomPhase ? 'true' : 'false'
@@ -1088,6 +1298,7 @@ function IntroSection({
 
     const refreshScrollMetrics = () => {
       updateScrollTrackHeight()
+      // measureIntroTitleHeroOffsets()
       syncIntroScrollState(scrollYProgress.get())
     }
 
@@ -1095,6 +1306,14 @@ function IntroSection({
 
     const resizeObserver = new ResizeObserver(refreshScrollMetrics)
     resizeObserver.observe(copyElement)
+
+    if (contentInnerRef.current) {
+      resizeObserver.observe(contentInnerRef.current)
+    }
+
+    // if (titleRef.current) {
+    //   resizeObserver.observe(titleRef.current)
+    // }
 
     const handleResize = () => {
       refreshScrollMetrics()
@@ -1107,11 +1326,23 @@ function IntroSection({
       resizeObserver.disconnect()
       window.removeEventListener('resize', handleResize)
     }
-  }, [contentParagraphs.length, prefersReducedMotion, scrollYProgress, syncIntroScrollState])
+  }, [
+    contentParagraphs.length,
+    // measureIntroTitleHeroOffsets,
+    prefersReducedMotion,
+    scrollYProgress,
+    syncIntroScrollState,
+  ])
 
   useEffect(() => {
     syncIntroScrollState(scrollYProgress.get())
   }, [introResetKey, scrollYProgress, syncIntroScrollState])
+
+  useEffect(() => {
+    updateParagraphOpacities(
+      getCopyScrollProgress(scrollYProgress.get(), copyPhaseEndRatioRef.current),
+    )
+  }, [contentParagraphs.length, introResetKey, scrollYProgress, updateParagraphOpacities])
 
   useEffect(() => {
     const trackElement = trackRef.current
@@ -1563,25 +1794,63 @@ function IntroSection({
             viewport={{ amount: 0.45, once: true }}
             transition={{ duration: 0.65, delay: 0.14, ease: [0.22, 1, 0.36, 1] }}
           >
-            <motion.div className="intro-section__content-inner" style={{ opacity: contentOpacity }}>
-              <h2 id="intro-section-title" className="intro-section__title">
+            <motion.div
+              ref={contentInnerRef}
+              className="intro-section__content-inner"
+              style={{ opacity: contentOpacity }}
+            >
+              {/* <h2 id="intro-section-title" className="intro-section__title">
                 {title}
-              </h2>
+              </h2> */}
 
-              <motion.div
+              {/* Title scroll animation — disabled to avoid affecting scroll behaviour
+              <motion.h2
+                ref={titleRef}
+                id="intro-section-title"
+                className="intro-section__title"
+                style={
+                  prefersReducedMotion
+                    ? undefined
+                    : {
+                        x: introTitleTranslateX,
+                        y: introTitleTranslateY,
+                        scale: introTitleScale,
+                        fontSize: introTitleFontSize,
+                        transformOrigin: introTitleTransformOrigin,
+                      }
+                }
+              >
+                {title}
+              </motion.h2>
+              */}
+
+              <div
                 ref={copyRef}
                 className="intro-section__copy"
                 data-prefers-reduced-motion={prefersReducedMotion ? 'true' : 'false'}
               >
-                {contentParagraphs.map((paragraph, paragraphIndex) => (
-                  <p
-                    key={`${paragraphIndex}-${paragraph.slice(0, 18)}`}
-                    className="intro-section__paragraph"
-                  >
-                    {paragraph}
-                  </p>
-                ))}
-              </motion.div>
+                <div ref={copyContentRef} className="intro-section__copy-content">
+                  {contentParagraphs.map((paragraph, paragraphIndex) => (
+                    <p
+                      key={`${paragraphIndex}-${paragraph.slice(0, 18)}`}
+                      className="intro-section__paragraph"
+                    >
+                      {splitParagraphIntoWordTokens(paragraph).map((token, tokenIndex) =>
+                        /\S/.test(token) ? (
+                          <span
+                            key={`${paragraphIndex}-${tokenIndex}`}
+                            className="intro-section__word"
+                          >
+                            {token}
+                          </span>
+                        ) : (
+                          <span key={`${paragraphIndex}-${tokenIndex}`}>{token}</span>
+                        ),
+                      )}
+                    </p>
+                  ))}
+                </div>
+              </div>
             </motion.div>
           </motion.div>
         </div>

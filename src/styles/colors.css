@@ -25,6 +25,9 @@
   --color-hero-green-circle-fade: rgba(90, 185, 71, 0.04);
   --color-intro-surface: #eef4ff;
   --color-intro-copy-text: rgba(18, 20, 61, 0.8);
+  --color-intro-copy-text-revealed: rgba(18, 20, 61, 0.95);
+  --color-intro-copy-text-highlight: #8fd044;
+  --color-intro-copy-text-faded: rgba(18, 20, 61, 0.25);
   --color-intro-grid-dot: rgba(18, 20, 61, 0.08);
   --color-intro-overlay-glow: rgba(98, 185, 255, 0.16);
   --color-intro-overlay-shadow: rgba(18, 20, 61, 0.05);
